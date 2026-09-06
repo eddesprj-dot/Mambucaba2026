@@ -280,6 +280,7 @@ document.querySelector('#app').innerHTML = `
           <div class="toolbar-buttons">
             <button id="btn-excel" class="btn btn-secondary" type="button">Baixar Excel</button>
             <button id="btn-pdf" class="btn btn-secondary" type="button">Gerar PDF</button>
+            <button id="btn-pdf-onibus" class="btn btn-secondary" type="button">PDF Empresa de Ônibus</button>
           </div>
         </div>
 
@@ -349,6 +350,7 @@ const el = {
   statValor: document.querySelector('#stat-valor'),
   btnExcel: document.querySelector('#btn-excel'),
   btnPdf: document.querySelector('#btn-pdf'),
+  btnPdfOnibus: document.querySelector('#btn-pdf-onibus'),
 };
 
 function digits(value) {
@@ -1136,6 +1138,44 @@ el.btnPdf.addEventListener('click', () => {
   });
 
   pdf.save('Mambucaba_2026_Passageiros.pdf');
+});
+
+el.btnPdfOnibus.addEventListener('click', () => {
+  const passageiros = allPassengers();
+  if (!passageiros.length) {
+    alert('Não há passageiros para exportar.');
+    return;
+  }
+
+  const pdf = new jsPDF({
+    orientation: 'landscape',
+    unit: 'mm',
+    format: 'a4',
+  });
+
+  pdf.setFontSize(18);
+  pdf.text('RELAÇÃO DE PASSAGEIROS — MAMBUCABA 2026', 14, 16);
+
+  pdf.setFontSize(10);
+  pdf.text('Data da viagem: 28/11/2026', 14, 23);
+  pdf.text('Destino: Vila Histórica de Mambucaba', 14, 29);
+  pdf.text(`Total de passageiros: ${passageiros.length}`, 14, 35);
+
+  autoTable(pdf, {
+    startY: 41,
+    head: [['Nº', 'Família/Responsável', 'Vínculo', 'Nome completo do passageiro', 'CPF', 'Idade']],
+    body: passageiros.map((item, index) => [
+      index + 1,
+      upperText(item.familiaResponsavel || ''),
+      item.tipo || '—',
+      upperText(item.nome || ''),
+      item.cpf ? formatCpf(item.cpf) : '—',
+      item.idade ?? '—',
+    ]),
+    styles: { fontSize: 8 },
+  });
+
+  pdf.save('Mambucaba_2026_Relacao_Passageiros_Empresa_Onibus.pdf');
 });
 
 function downloadBlob(blob, filename) {
