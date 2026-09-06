@@ -1,0 +1,65 @@
+rules_version = '2';
+
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    function isAdmin() {
+      return request.auth != null
+        && request.auth.token.email == 'eddesprj@gmail.com';
+    }
+
+    match /inscricoes/{cpf} {
+
+      allow create: if
+        request.auth == null
+        && cpf == request.resource.data.cpf
+        && request.resource.data.keys().hasOnly([
+          'nome',
+          'cpf',
+          'quantidade',
+          'valorUnitario',
+          'valorTotal',
+          'criadoEm'
+        ])
+        && request.resource.data.nome is string
+        && request.resource.data.nome.size() >= 3
+        && request.resource.data.nome.size() <= 120
+        && request.resource.data.cpf is string
+        && request.resource.data.cpf.matches('^[0-9]{11}$')
+        && request.resource.data.quantidade is int
+        && request.resource.data.quantidade >= 1
+        && request.resource.data.quantidade <= 20
+        && request.resource.data.valorUnitario == 90
+        && request.resource.data.valorTotal == request.resource.data.quantidade * 90
+        && request.resource.data.criadoEm == request.time;
+
+      allow read: if isAdmin();
+
+      allow update: if
+        isAdmin()
+        && request.resource.data.cpf == resource.data.cpf
+        && request.resource.data.valorUnitario == 90
+        && request.resource.data.keys().hasOnly([
+          'nome',
+          'cpf',
+          'quantidade',
+          'valorUnitario',
+          'valorTotal',
+          'criadoEm'
+        ])
+        && request.resource.data.nome is string
+        && request.resource.data.nome.size() >= 3
+        && request.resource.data.nome.size() <= 120
+        && request.resource.data.quantidade is int
+        && request.resource.data.quantidade >= 1
+        && request.resource.data.quantidade <= 20
+        && request.resource.data.valorTotal == request.resource.data.quantidade * 90;
+
+      allow delete: if isAdmin();
+    }
+
+    match /{document=**} {
+      allow read, write: if false;
+    }
+  }
+}

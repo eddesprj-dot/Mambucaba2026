@@ -1,0 +1,22 @@
+MAMBUCABA 2026 - V1
+
+SUBSTITUA/COLE ESTES ARQUIVOS NO PROJETO:
+
+1. index.html -> raiz do projeto
+2. src/main.js -> pasta src
+3. src/style.css -> pasta src
+4. public/banner-mambucaba.jpg -> pasta public
+5. firestore.rules -> referência das regras já publicadas no Firebase
+
+DEPENDÊNCIAS NECESSÁRIAS:
+npm install firebase jspdf jspdf-autotable
+
+TESTES:
+npm run dev
+
+DEPOIS:
+npx vite --host 0.0.0.0
+
+OBSERVAÇÃO:
+O botão Excel gera um arquivo .xls compatível com Microsoft Excel
+sem usar a biblioteca xlsx/SheetJS.
