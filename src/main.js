@@ -358,15 +358,19 @@ function cleanText(value) {
   return String(value || '').trim().replace(/\s+/g, ' ');
 }
 
+function upperText(value) {
+  return cleanText(value).toLocaleUpperCase('pt-BR');
+}
+
 function fullNameIsValid(value) {
   const parts = cleanText(value).split(' ').filter(Boolean);
   return parts.length >= 2 && parts.every((part) => part.length >= 2);
 }
 
 function publicName(fullName, nickname = '') {
-  const parts = cleanText(fullName).split(' ').filter(Boolean);
+  const parts = upperText(fullName).split(' ').filter(Boolean);
   const base = parts.slice(0, 2).join(' ');
-  const nick = cleanText(nickname);
+  const nick = upperText(nickname);
   return nick ? `${base} (${nick})` : base;
 }
 
@@ -409,8 +413,8 @@ el.form.addEventListener('submit', async (event) => {
   event.preventDefault();
   el.formMsg.textContent = '';
 
-  const nome = cleanText(el.nome.value);
-  const apelido = cleanText(el.apelido.value);
+  const nome = upperText(el.nome.value);
+  const apelido = upperText(el.apelido.value);
   const cpf = digits(el.cpf.value);
   const quantidade = Number(el.quantidade.value);
   const valorTotal = quantidade * VALOR_PASSAGEM;
@@ -528,7 +532,7 @@ function renderPublicList() {
     const tr = document.createElement('tr');
     tr.innerHTML = `
       <td data-label="#">${index + 1}</td>
-      <td data-label="Nome"><strong>${escapeHtml(item.nomePublico)}</strong></td>
+      <td data-label="Nome"><strong>${escapeHtml(upperText(item.nomePublico))}</strong></td>
       <td data-label="Passagens">${Number(item.quantidade)}</td>
       <td data-label="Data">${formatPublicDate(item.criadoEm)}</td>
     `;
@@ -675,8 +679,8 @@ function renderTable() {
     const tr = document.createElement('tr');
 
     tr.innerHTML = `
-      <td data-label="Nome">${escapeHtml(item.nome)}</td>
-      <td data-label="Apelido">${escapeHtml(item.apelido || '—')}</td>
+      <td data-label="Nome">${escapeHtml(upperText(item.nome))}</td>
+      <td data-label="Apelido">${item.apelido ? escapeHtml(upperText(item.apelido)) : '—'}</td>
       <td data-label="CPF">${formatCpf(item.cpf)}</td>
       <td data-label="Passagens">${Number(item.quantidade)}</td>
       <td data-label="Total">${dinheiro.format(Number(item.valorTotal || 0))}</td>
@@ -707,8 +711,8 @@ el.lista.addEventListener('click', async (event) => {
     const novaQtd = prompt('Quantidade de passagens (1 a 20):', item.quantidade);
     if (novaQtd === null) return;
 
-    const nome = cleanText(novoNome);
-    const apelido = cleanText(novoApelido);
+    const nome = upperText(novoNome);
+    const apelido = upperText(novoApelido);
     const quantidade = Number(novaQtd);
 
     if (!fullNameIsValid(nome)) {
