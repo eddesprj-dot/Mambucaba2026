@@ -594,3 +594,128 @@ tr:last-child td { border-bottom: 0; }
 
   td:last-child { border-bottom: 0; }
 }
+
+/* Controle de pagamentos — Área do Organizador */
+.payment-box {
+  margin-top: 18px;
+  padding: 18px;
+  border: 1px solid var(--border, #313131);
+  border-radius: 14px;
+  background: rgba(255, 255, 255, 0.02);
+}
+
+.payment-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 14px;
+}
+
+.payment-head h4 {
+  margin: 4px 0 0;
+  font-size: 1.05rem;
+}
+
+.payment-status {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 7px 11px;
+  border-radius: 999px;
+  border: 1px solid currentColor;
+  font-size: 0.78rem;
+  font-weight: 800;
+  letter-spacing: 0.04em;
+}
+
+.status-pago { color: #4ade80; }
+.status-parcial { color: #fb923c; }
+.status-pendente { color: #f87171; }
+
+.payment-summary {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 10px;
+  margin-bottom: 14px;
+}
+
+.payment-summary article {
+  padding: 12px;
+  border: 1px solid var(--border, #313131);
+  border-radius: 12px;
+  background: rgba(0, 0, 0, 0.2);
+}
+
+.payment-summary span,
+.payment-summary strong {
+  display: block;
+}
+
+.payment-summary span {
+  margin-bottom: 4px;
+  font-size: 0.78rem;
+  opacity: 0.75;
+}
+
+.payment-summary strong {
+  font-size: 1rem;
+}
+
+.payment-form {
+  display: grid;
+  grid-template-columns: minmax(150px, 0.7fr) minmax(220px, 1.3fr) auto;
+  gap: 10px;
+  align-items: end;
+}
+
+.payment-form label {
+  margin: 0;
+}
+
+.payment-history {
+  margin-top: 16px;
+  border-top: 1px solid var(--border, #313131);
+  padding-top: 14px;
+}
+
+.payment-row {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 12px;
+  padding: 10px 0;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+}
+
+.payment-row > div {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+}
+
+.payment-row span,
+.payment-empty {
+  font-size: 0.83rem;
+  opacity: 0.72;
+}
+
+.payment-empty {
+  margin: 12px 0 0;
+}
+
+@media (max-width: 760px) {
+  .payment-head,
+  .payment-row {
+    align-items: flex-start;
+  }
+
+  .payment-summary,
+  .payment-form {
+    grid-template-columns: 1fr;
+  }
+
+  .payment-form .btn {
+    width: 100%;
+  }
+}
