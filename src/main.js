@@ -53,6 +53,7 @@ const state = {
   familiasPrivadas: [],
   pagamentos: [],
   filtro: '',
+  edicaoFamilia: null,
 };
 
 document.querySelector('#app').innerHTML = `
@@ -316,6 +317,24 @@ document.querySelector('#app').innerHTML = `
       <button value="cancel" class="btn btn-outline dialog-cancel" type="submit">Cancelar</button>
     </form>
   </dialog>
+
+  <dialog id="dialog-editar-familia" class="member-dialog edit-family-dialog">
+    <form id="form-editar-familia" class="dialog-card edit-family-card" novalidate>
+      <div class="edit-dialog-head">
+        <div>
+          <span class="tag">ÁREA DO ORGANIZADOR</span>
+          <h3>Editar participantes da família</h3>
+        </div>
+        <button id="btn-fechar-edicao" class="row-action" type="button">Fechar</button>
+      </div>
+      <div id="conteudo-edicao-familia"></div>
+      <p id="msg-edicao-familia" class="message" aria-live="polite"></p>
+      <div class="edit-dialog-actions">
+        <button id="btn-cancelar-edicao" class="btn btn-outline" type="button">Cancelar</button>
+        <button id="btn-salvar-edicao" class="btn btn-secondary" type="submit">Salvar alterações</button>
+      </div>
+    </form>
+  </dialog>
 `;
 
 const el = {
@@ -327,6 +346,13 @@ const el = {
   semMembros: document.querySelector('#sem-membros'),
   btnAdicionarMembro: document.querySelector('#btn-adicionar-membro'),
   dialogTipo: document.querySelector('#dialog-tipo'),
+  dialogEditarFamilia: document.querySelector('#dialog-editar-familia'),
+  formEditarFamilia: document.querySelector('#form-editar-familia'),
+  conteudoEdicaoFamilia: document.querySelector('#conteudo-edicao-familia'),
+  msgEdicaoFamilia: document.querySelector('#msg-edicao-familia'),
+  btnFecharEdicao: document.querySelector('#btn-fechar-edicao'),
+  btnCancelarEdicao: document.querySelector('#btn-cancelar-edicao'),
+  btnSalvarEdicao: document.querySelector('#btn-salvar-edicao'),
   consentimento: document.querySelector('#consentimento'),
   resumoFamilia: document.querySelector('#resumo-familia'),
   resumoPassagens: document.querySelector('#resumo-passagens'),
@@ -1143,9 +1169,10 @@ function renderAdminFamilies() {
           <h3>${escapeHtml(upperText(familia.responsavel?.nome || ''))}</h3>
           <p>${passageiros.length} ${passageiros.length === 1 ? 'passageiro' : 'passageiros'} • <strong>Pago: ${dinheiro.format(totalPago)}</strong> • Pendente: ${dinheiro.format(pendente)} • Total devido: ${dinheiro.format(Number(familia.valorTotal || 0))}</p>
         </div>
-        <button class="row-action danger" type="button" data-delete-family="${familia.id}">
-          Excluir família
-        </button>
+        <div class="family-head-actions">
+          <button class="row-action" type="button" data-edit-family="${familia.id}">Editar dados</button>
+          <button class="row-action danger" type="button" data-delete-family="${familia.id}">Excluir família</button>
+        </div>
       </div>
 
       <div class="table-wrap">
@@ -1222,7 +1249,351 @@ function renderAdminFamilies() {
   });
 }
 
+
+function tipoOptions(tipoAtual) {
+  return ['ESPOSA/COMPANHEIRA', 'FILHO(A)', 'OUTRO MEMBRO']
+    .map((tipo) => `<option value="${tipo}" ${tipo === tipoAtual ? 'selected' : ''}>${tipo}</option>`)
+    .join('');
+}
+
+function renderEditFamilyDialog() {
+  const edicao = state.edicaoFamilia;
+  if (!edicao) return;
+
+  if (edicao.legacy) {
+    el.conteudoEdicaoFamilia.innerHTML = `
+      <div class="edit-section">
+        <h4>Cadastro anterior</h4>
+        <div class="form-grid">
+          <label class="field-wide">Nome completo
+            <input name="responsavelNome" maxlength="120" value="${escapeHtml(edicao.responsavel.nome || '')}" required />
+          </label>
+          <label>Apelido
+            <input name="responsavelApelido" maxlength="40" value="${escapeHtml(edicao.responsavel.apelido || '')}" />
+          </label>
+          <label>CPF
+            <input name="responsavelCpf" inputmode="numeric" maxlength="14" value="${formatCpf(edicao.responsavel.cpf || '')}" required />
+          </label>
+          <label>Quantidade de passagens
+            <input name="legacyQuantidade" type="number" min="1" max="20" step="1" value="${Number(edicao.totalPassagens || 1)}" required />
+          </label>
+        </div>
+        <p class="edit-note">Este é um cadastro do modelo anterior. A edição preserva o registro e a data original de inclusão.</p>
+      </div>
+    `;
+    return;
+  }
+
+  el.conteudoEdicaoFamilia.innerHTML = `
+    <div class="edit-section">
+      <h4>Responsável</h4>
+      <div class="form-grid">
+        <label class="field-wide">Nome completo
+          <input name="responsavelNome" maxlength="120" value="${escapeHtml(edicao.responsavel.nome || '')}" required />
+        </label>
+        <label>Apelido
+          <input name="responsavelApelido" maxlength="40" value="${escapeHtml(edicao.responsavel.apelido || '')}" />
+        </label>
+        <label>CPF
+          <input name="responsavelCpf" inputmode="numeric" maxlength="14" value="${formatCpf(edicao.responsavel.cpf || '')}" required />
+        </label>
+      </div>
+    </div>
+
+    <div class="edit-section">
+      <div class="members-head">
+        <div>
+          <h4>Demais membros</h4>
+          <p>Altere os dados ou remova somente o participante desejado.</p>
+        </div>
+      </div>
+      <div class="edit-members-list">
+        ${(edicao.membros || []).length ? edicao.membros.map((membro, index) => `
+          <article class="edit-member-card" data-edit-member-index="${index}">
+            <div class="edit-member-head">
+              <strong>Membro ${index + 1}</strong>
+              <button class="row-action danger" type="button" data-remove-edit-member="${index}">Excluir membro</button>
+            </div>
+            <div class="form-grid">
+              <label>Vínculo
+                <select name="tipo-${index}">${tipoOptions(membro.tipo)}</select>
+              </label>
+              <label class="field-wide">Nome completo
+                <input name="nome-${index}" maxlength="120" value="${escapeHtml(membro.nome || '')}" required />
+              </label>
+              <label>Apelido
+                <input name="apelido-${index}" maxlength="40" value="${escapeHtml(membro.apelido || '')}" />
+              </label>
+              <label>CPF
+                <input name="cpf-${index}" inputmode="numeric" maxlength="14" value="${membro.cpf ? formatCpf(membro.cpf) : ''}" placeholder="${membro.tipo === 'FILHO(A)' ? 'Opcional para filho(a)' : '000.000.000-00'}" />
+              </label>
+              <label>Idade
+                <input name="idade-${index}" type="number" min="0" max="17" step="1" value="${membro.tipo === 'FILHO(A)' && membro.idade != null ? membro.idade : ''}" placeholder="Somente filho(a)" ${membro.tipo === 'FILHO(A)' ? '' : 'disabled'} />
+              </label>
+            </div>
+          </article>
+        `).join('') : '<p class="members-empty">Nenhum outro membro nesta família.</p>'}
+      </div>
+      <button class="btn btn-outline edit-add-member" type="button" data-add-edit-member>+ Adicionar membro</button>
+    </div>
+  `;
+}
+
+function abrirEdicaoFamilia(familia) {
+  state.edicaoFamilia = {
+    id: familia.id,
+    legacy: Boolean(familia.legacy),
+    responsavel: { ...(familia.responsavel || {}) },
+    membros: (familia.membros || []).map((membro) => ({ ...membro })),
+    totalPassagens: Number(familia.totalPassagens || 1),
+    criadoEm: familia.criadoEm || null,
+  };
+  el.msgEdicaoFamilia.textContent = '';
+  renderEditFamilyDialog();
+  el.dialogEditarFamilia.showModal();
+}
+
+function fecharEdicaoFamilia() {
+  state.edicaoFamilia = null;
+  el.msgEdicaoFamilia.textContent = '';
+  if (el.dialogEditarFamilia.open) el.dialogEditarFamilia.close();
+}
+
+function cpfsDeOutrasFamilias(familiaId) {
+  const usados = new Set();
+  state.familiasPrivadas
+    .filter((familia) => familia.id !== familiaId)
+    .forEach((familia) => {
+      const cpfResp = digits(familia.responsavel?.cpf || '');
+      if (cpfResp) usados.add(cpfResp);
+      (familia.membros || []).forEach((membro) => {
+        const cpf = digits(membro.cpf || '');
+        if (cpf) usados.add(cpf);
+      });
+    });
+  return usados;
+}
+
+function sincronizarEdicaoDoFormulario() {
+  const edicao = state.edicaoFamilia;
+  if (!edicao || !el.formEditarFamilia) return;
+  const form = el.formEditarFamilia;
+
+  if (form.elements.responsavelNome) edicao.responsavel.nome = upperText(form.elements.responsavelNome.value);
+  if (form.elements.responsavelApelido) edicao.responsavel.apelido = upperText(form.elements.responsavelApelido.value);
+  if (form.elements.responsavelCpf) edicao.responsavel.cpf = digits(form.elements.responsavelCpf.value);
+  if (edicao.legacy && form.elements.legacyQuantidade) {
+    edicao.totalPassagens = Number(form.elements.legacyQuantidade.value || edicao.totalPassagens || 1);
+  }
+
+  if (!edicao.legacy) {
+    edicao.membros.forEach((membro, index) => {
+      membro.tipo = form.elements[`tipo-${index}`]?.value || membro.tipo;
+      membro.nome = upperText(form.elements[`nome-${index}`]?.value || '');
+      membro.apelido = upperText(form.elements[`apelido-${index}`]?.value || '');
+      membro.cpf = digits(form.elements[`cpf-${index}`]?.value || '');
+      const idadeRaw = form.elements[`idade-${index}`]?.value ?? '';
+      membro.idade = membro.tipo === 'FILHO(A)'
+        ? (idadeRaw === '' ? Number.NaN : Number(idadeRaw))
+        : null;
+    });
+  }
+}
+
+function lerFormularioEdicao() {
+  const edicao = state.edicaoFamilia;
+  if (!edicao) return { error: 'Nenhuma família selecionada.' };
+
+  const form = el.formEditarFamilia;
+  const responsavel = {
+    tipo: edicao.legacy ? 'CADASTRO ANTERIOR' : 'RESPONSÁVEL',
+    nome: upperText(form.elements.responsavelNome?.value || ''),
+    apelido: upperText(form.elements.responsavelApelido?.value || ''),
+    cpf: digits(form.elements.responsavelCpf?.value || ''),
+    idade: null,
+  };
+
+  if (!fullNameIsValid(responsavel.nome)) return { error: 'Informe o nome completo do responsável.' };
+  if (!cpfIsValid(responsavel.cpf)) return { error: 'Informe um CPF válido para o responsável.' };
+
+  if (edicao.legacy) {
+    const quantidade = Number(form.elements.legacyQuantidade?.value || 1);
+    if (!Number.isInteger(quantidade) || quantidade < 1 || quantidade > 20) {
+      return { error: 'Informe uma quantidade de passagens entre 1 e 20.' };
+    }
+    if (cpfsDeOutrasFamilias(edicao.id).has(responsavel.cpf)) {
+      return { error: 'Este CPF já está cadastrado em outra família.' };
+    }
+    return { responsavel, membros: [], quantidade };
+  }
+
+  const membros = [];
+  for (let index = 0; index < edicao.membros.length; index += 1) {
+    const tipo = form.elements[`tipo-${index}`]?.value || edicao.membros[index].tipo;
+    const membro = {
+      tipo,
+      nome: upperText(form.elements[`nome-${index}`]?.value || ''),
+      apelido: upperText(form.elements[`apelido-${index}`]?.value || ''),
+      cpf: digits(form.elements[`cpf-${index}`]?.value || ''),
+      idade: tipo === 'FILHO(A)'
+        ? ((form.elements[`idade-${index}`]?.value ?? '') === '' ? Number.NaN : Number(form.elements[`idade-${index}`]?.value))
+        : null,
+    };
+
+    if (!['ESPOSA/COMPANHEIRA', 'FILHO(A)', 'OUTRO MEMBRO'].includes(membro.tipo)) {
+      return { error: `Vínculo inválido no membro ${index + 1}.` };
+    }
+    if (!fullNameIsValid(membro.nome)) return { error: `Informe o nome completo do membro ${index + 1}.` };
+
+    if (membro.tipo === 'FILHO(A)') {
+      if (!Number.isInteger(membro.idade) || membro.idade < 0 || membro.idade > 17) {
+        return { error: `Informe uma idade válida (0 a 17 anos) para ${membro.nome}.` };
+      }
+      if (membro.cpf && !cpfIsValid(membro.cpf)) return { error: `O CPF informado para ${membro.nome} não é válido.` };
+    } else if (!cpfIsValid(membro.cpf)) {
+      return { error: `Informe um CPF válido para ${membro.nome}.` };
+    }
+    membros.push(membro);
+  }
+
+  const cpfs = [responsavel.cpf, ...membros.map((m) => m.cpf).filter(Boolean)];
+  if (new Set(cpfs).size !== cpfs.length) return { error: 'Há CPF repetido dentro da própria família.' };
+
+  const usados = cpfsDeOutrasFamilias(edicao.id);
+  const repetido = cpfs.find((cpf) => usados.has(cpf));
+  if (repetido) return { error: `O CPF ${formatCpf(repetido)} já está cadastrado em outra família.` };
+
+  return { responsavel, membros };
+}
+
+el.btnFecharEdicao.addEventListener('click', fecharEdicaoFamilia);
+el.btnCancelarEdicao.addEventListener('click', fecharEdicaoFamilia);
+
+el.conteudoEdicaoFamilia.addEventListener('click', (event) => {
+  const removeButton = event.target.closest('[data-remove-edit-member]');
+  if (removeButton && state.edicaoFamilia) {
+    sincronizarEdicaoDoFormulario();
+    const index = Number(removeButton.dataset.removeEditMember);
+    const membro = state.edicaoFamilia.membros[index];
+    if (!membro) return;
+    if (!confirm(`Excluir ${membro.nome || 'este membro'} desta família? A exclusão será efetivada ao salvar.`)) return;
+    state.edicaoFamilia.membros.splice(index, 1);
+    renderEditFamilyDialog();
+    return;
+  }
+
+  const addButton = event.target.closest('[data-add-edit-member]');
+  if (addButton && state.edicaoFamilia) {
+    sincronizarEdicaoDoFormulario();
+    if (state.edicaoFamilia.membros.length >= LIMITE_MEMBROS - 1) {
+      alert('Limite máximo de participantes atingido.');
+      return;
+    }
+    state.edicaoFamilia.membros.push({
+      tipo: 'OUTRO MEMBRO',
+      nome: '',
+      apelido: '',
+      cpf: '',
+      idade: null,
+    });
+    renderEditFamilyDialog();
+  }
+});
+
+el.formEditarFamilia.addEventListener('input', (event) => {
+  if (event.target.name?.startsWith('tipo-')) {
+    const index = Number(event.target.name.split('-')[1]);
+    if (state.edicaoFamilia?.membros[index]) {
+      state.edicaoFamilia.membros[index].tipo = event.target.value;
+      const card = el.conteudoEdicaoFamilia.querySelector(`[data-edit-member-index="${index}"]`);
+      const idadeInput = card?.querySelector(`[name="idade-${index}"]`);
+      const cpfInput = card?.querySelector(`[name="cpf-${index}"]`);
+      if (idadeInput) {
+        idadeInput.disabled = event.target.value !== 'FILHO(A)';
+        if (event.target.value !== 'FILHO(A)') idadeInput.value = '';
+      }
+      if (cpfInput) cpfInput.placeholder = event.target.value === 'FILHO(A)' ? 'Opcional para filho(a)' : '000.000.000-00';
+    }
+  }
+});
+
+el.formEditarFamilia.addEventListener('submit', async (event) => {
+  event.preventDefault();
+  const edicao = state.edicaoFamilia;
+  if (!edicao) return;
+
+  const result = lerFormularioEdicao();
+  if (result.error) {
+    el.msgEdicaoFamilia.textContent = result.error;
+    return;
+  }
+
+  el.btnSalvarEdicao.disabled = true;
+  el.btnSalvarEdicao.textContent = 'Salvando...';
+  el.msgEdicaoFamilia.textContent = '';
+
+  try {
+    const totalPago = Math.round(totalPagoFamilia(edicao.id) * 100) / 100;
+    const batch = writeBatch(db);
+
+    if (edicao.legacy) {
+      const quantidade = result.quantidade;
+      const valorTotal = quantidade * VALOR_PASSAGEM;
+      batch.update(doc(db, 'inscricoes', edicao.id), {
+        nome: result.responsavel.nome,
+        apelido: result.responsavel.apelido,
+        cpf: result.responsavel.cpf,
+        quantidade,
+        valorUnitario: VALOR_PASSAGEM,
+        valorTotal,
+      });
+      batch.update(doc(db, 'participantesPublicos', edicao.id), {
+        nomePublico: publicName(result.responsavel.nome, result.responsavel.apelido),
+        quantidade,
+        valorPago: totalPago,
+      });
+    } else {
+      const pessoas = 1 + result.membros.length;
+      const passagensPagas = totalPassagensPagas(result.membros);
+      const valorTotal = passagensPagas * VALOR_PASSAGEM;
+
+      batch.update(doc(db, 'familias', edicao.id), {
+        responsavel: result.responsavel,
+        membros: result.membros,
+        totalPessoas: pessoas,
+        totalPassagens: passagensPagas,
+        valorUnitario: VALOR_PASSAGEM,
+        valorTotal,
+      });
+      batch.update(doc(db, 'familiasPublicas', edicao.id), {
+        nomePublico: publicName(result.responsavel.nome, result.responsavel.apelido),
+        totalPessoas: pessoas,
+        totalPassagens: passagensPagas,
+        valorPago: totalPago,
+      });
+    }
+
+    await batch.commit();
+    fecharEdicaoFamilia();
+    await loadPrivateFamilies();
+    alert('Dados da família atualizados com sucesso.');
+  } catch (error) {
+    console.error(error);
+    el.msgEdicaoFamilia.textContent = 'Não foi possível salvar as alterações. Nenhum dado foi alterado.';
+  } finally {
+    el.btnSalvarEdicao.disabled = false;
+    el.btnSalvarEdicao.textContent = 'Salvar alterações';
+  }
+});
+
 el.familiasAdmin.addEventListener('click', async (event) => {
+  const editFamilyButton = event.target.closest('[data-edit-family]');
+  if (editFamilyButton) {
+    const familia = state.familiasPrivadas.find((item) => item.id === editFamilyButton.dataset.editFamily);
+    if (familia) abrirEdicaoFamilia(familia);
+    return;
+  }
+
   const deletePaymentButton = event.target.closest('[data-delete-payment]');
   if (deletePaymentButton) {
     const pagamento = state.pagamentos.find((item) => item.id === deletePaymentButton.dataset.deletePayment);

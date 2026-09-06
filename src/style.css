@@ -719,3 +719,115 @@ tr:last-child td { border-bottom: 0; }
     width: 100%;
   }
 }
+
+/* Edição segura de participantes na área do organizador */
+.family-head-actions {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+}
+
+.edit-family-dialog {
+  width: min(980px, calc(100vw - 24px));
+  max-width: 980px;
+}
+
+.edit-family-card {
+  width: 100%;
+  max-height: min(88vh, 900px);
+  overflow-y: auto;
+}
+
+.edit-dialog-head,
+.edit-member-head,
+.edit-dialog-actions {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.edit-dialog-head {
+  margin-bottom: 18px;
+}
+
+.edit-dialog-head h3,
+.edit-section h4 {
+  margin: 5px 0 0;
+}
+
+.edit-section {
+  padding: 16px;
+  margin-top: 14px;
+  border: 1px solid #343434;
+  border-radius: 16px;
+  background: #101010;
+}
+
+.edit-members-list {
+  display: grid;
+  gap: 12px;
+  margin-top: 14px;
+}
+
+.edit-member-card {
+  padding: 14px;
+  border: 1px solid #3b3b3b;
+  border-radius: 14px;
+  background: #151515;
+}
+
+.edit-member-head {
+  margin-bottom: 12px;
+}
+
+.edit-add-member {
+  margin-top: 14px;
+}
+
+.edit-note {
+  margin: 12px 0 0;
+  color: #aaa;
+  font-size: .88rem;
+}
+
+.edit-dialog-actions {
+  position: sticky;
+  bottom: -1px;
+  margin-top: 18px;
+  padding-top: 14px;
+  background: linear-gradient(to top, #0d0d0d 75%, rgba(13,13,13,0));
+}
+
+.edit-family-card select {
+  width: 100%;
+  min-height: 44px;
+  padding: 10px 12px;
+  border: 1px solid #3a3a3a;
+  border-radius: 10px;
+  background: #111;
+  color: #f3f3f3;
+}
+
+@media (max-width: 720px) {
+  .family-head-actions,
+  .edit-dialog-head,
+  .edit-dialog-actions {
+    align-items: stretch;
+  }
+
+  .edit-dialog-head,
+  .edit-dialog-actions {
+    flex-direction: column;
+  }
+
+  .family-head-actions {
+    width: 100%;
+    justify-content: flex-start;
+  }
+
+  .edit-dialog-actions .btn {
+    width: 100%;
+  }
+}
