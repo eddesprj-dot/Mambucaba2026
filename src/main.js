@@ -16,6 +16,7 @@ import {
   orderBy,
   query,
   serverTimestamp,
+  setDoc,
   updateDoc,
   writeBatch,
 } from 'firebase/firestore';
@@ -35,6 +36,7 @@ const firebaseConfig = {
 
 const ADMIN_EMAIL = 'eddesprj@gmail.com';
 const VALOR_PASSAGEM = 90;
+const LIMITE_MEMBROS = 20;
 
 const app = initializeApp(firebaseConfig);
 const auth = getAuth(app);
@@ -46,8 +48,9 @@ const dinheiro = new Intl.NumberFormat('pt-BR', {
 });
 
 const state = {
-  inscricoes: [],
-  publicos: [],
+  membros: [],
+  familiasPublicas: [],
+  familiasPrivadas: [],
   filtro: '',
 };
 
@@ -70,21 +73,21 @@ document.querySelector('#app').innerHTML = `
     <section class="card">
       <div class="card-head">
         <div>
-          <span class="tag">PARTICIPANTE</span>
-          <h2>Garanta sua passagem</h2>
+          <span class="tag">CADASTRO POR FAMÍLIA</span>
+          <h2>Responsável pela família</h2>
         </div>
-        <span class="price-badge">R$ 90,00</span>
+        <span class="price-badge">R$ 90,00 / pessoa</span>
       </div>
 
-      <form id="form-inscricao" novalidate>
+      <form id="form-familia" novalidate>
         <div class="form-grid">
           <label class="field-wide">
             Nome completo
             <input
-              id="nome"
+              id="responsavel-nome"
               maxlength="120"
               autocomplete="name"
-              placeholder="Digite seu nome completo"
+              placeholder="Digite o nome completo do responsável"
               required
             />
             <small>O nome completo ficará protegido e não será exibido na lista pública.</small>
@@ -93,66 +96,85 @@ document.querySelector('#app').innerHTML = `
           <label>
             Apelido <span class="optional">(opcional)</span>
             <input
-              id="apelido"
+              id="responsavel-apelido"
               maxlength="40"
               autocomplete="off"
-              placeholder="Ex.: Juninho"
+              placeholder="Ex.: Edshow"
             />
           </label>
 
           <label>
             CPF
             <input
-              id="cpf"
+              id="responsavel-cpf"
               inputmode="numeric"
               maxlength="14"
               autocomplete="off"
               placeholder="000.000.000-00"
               required
             />
-            <small>Seu CPF não será exibido para outros participantes.</small>
-          </label>
-
-          <label>
-            Quantidade de passagens
-            <select id="quantidade">
-              ${Array.from({ length: 20 }, (_, i) => `<option value="${i + 1}">${i + 1}</option>`).join('')}
-            </select>
           </label>
         </div>
 
-        <div class="total-box">
-          <span>Valor total</span>
-          <strong id="valor-total">${dinheiro.format(VALOR_PASSAGEM)}</strong>
+        <div class="members-box">
+          <div class="members-head">
+            <div>
+              <span class="tag">MEMBROS DA FAMÍLIA</span>
+              <h3>Quem mais vai viajar?</h3>
+            </div>
+            <button id="btn-adicionar-membro" class="btn btn-secondary" type="button">
+              + Adicionar membro
+            </button>
+          </div>
+
+          <div id="membros-container" class="members-list"></div>
+          <p id="sem-membros" class="members-empty">
+            Nenhum outro membro incluído. O responsável já conta como 1 passageiro.
+          </p>
+        </div>
+
+        <div class="family-summary">
+          <article>
+            <span>Família</span>
+            <strong id="resumo-familia">1 pessoa</strong>
+          </article>
+          <article>
+            <span>Passagens</span>
+            <strong id="resumo-passagens">1</strong>
+          </article>
+          <article class="summary-total">
+            <span>Valor total</span>
+            <strong id="resumo-total">${dinheiro.format(VALOR_PASSAGEM)}</strong>
+          </article>
         </div>
 
         <label class="check-row">
           <input id="consentimento" type="checkbox" required />
           <span>
-            Autorizo o uso dos meus dados exclusivamente para a organização
-            desta viagem/evento.
+            Autorizo o uso dos dados informados exclusivamente para organização,
+            documentação de passageiros e emissão/controle das passagens desta viagem.
           </span>
         </label>
 
         <button id="btn-enviar" class="btn btn-primary" type="submit">
-          Confirmar participação
+          Confirmar inscrição da família
         </button>
 
         <p id="form-msg" class="message" aria-live="polite"></p>
       </form>
 
       <div class="privacy">
-        <strong>Privacidade:</strong> o nome completo e o CPF não aparecem publicamente.
-        Na relação visível aos participantes será mostrado apenas o primeiro nome e o
-        primeiro sobrenome, além do apelido entre parênteses quando informado.
+        <strong>Privacidade:</strong> CPF, nome completo e idade dos filhos não aparecem publicamente.
+        Na lista pública será exibido somente o primeiro nome + primeiro sobrenome do responsável,
+        com apelido entre parênteses quando informado, e o total de passageiros da família.
       </div>
     </section>
 
     <section id="comprovante" class="card success-card hidden">
       <div class="success-mark">✓</div>
       <div>
-        <span class="tag">CADASTRO CONFIRMADO</span>
-        <h2>Participação registrada!</h2>
+        <span class="tag">INSCRIÇÃO CONFIRMADA</span>
+        <h2>Família registrada!</h2>
         <div id="comprovante-dados"></div>
       </div>
     </section>
@@ -161,13 +183,18 @@ document.querySelector('#app').innerHTML = `
       <div class="public-head">
         <div>
           <span class="tag">LISTA PÚBLICA</span>
-          <h2>Participantes confirmados</h2>
-          <p>Somente nome parcial, apelido e quantidade de passagens ficam visíveis.</p>
+          <h2>Famílias confirmadas</h2>
+          <p>Somente o responsável abreviado, apelido e quantidade da família ficam visíveis.</p>
         </div>
+
         <div class="public-stats">
           <article>
-            <span>Participantes</span>
-            <strong id="public-total-participantes">0</strong>
+            <span>Famílias</span>
+            <strong id="public-total-familias">0</strong>
+          </article>
+          <article>
+            <span>Passageiros</span>
+            <strong id="public-total-passageiros">0</strong>
           </article>
           <article>
             <span>Passagens</span>
@@ -181,7 +208,8 @@ document.querySelector('#app').innerHTML = `
           <thead>
             <tr>
               <th>#</th>
-              <th>Nome</th>
+              <th>Responsável</th>
+              <th>Família</th>
               <th>Passagens</th>
               <th>Data</th>
             </tr>
@@ -190,7 +218,7 @@ document.querySelector('#app').innerHTML = `
         </table>
       </div>
 
-      <p id="public-vazio" class="empty hidden">Ainda não há participantes exibidos.</p>
+      <p id="public-vazio" class="empty hidden">Ainda não há famílias exibidas.</p>
     </section>
 
     <div class="organizer-entry">
@@ -230,8 +258,12 @@ document.querySelector('#app').innerHTML = `
       <div id="dashboard" class="hidden">
         <div class="stats">
           <article>
-            <span>Cadastros</span>
-            <strong id="stat-cadastros">0</strong>
+            <span>Famílias</span>
+            <strong id="stat-familias">0</strong>
+          </article>
+          <article>
+            <span>Passageiros</span>
+            <strong id="stat-passageiros">0</strong>
           </article>
           <article>
             <span>Passagens</span>
@@ -244,34 +276,15 @@ document.querySelector('#app').innerHTML = `
         </div>
 
         <div class="toolbar">
-          <input id="busca" type="search" placeholder="Buscar por nome, apelido ou CPF" />
+          <input id="busca" type="search" placeholder="Buscar por família, passageiro, apelido ou CPF" />
           <div class="toolbar-buttons">
-            <button id="btn-excel" class="btn btn-secondary" type="button">
-              Baixar Excel
-            </button>
-            <button id="btn-pdf" class="btn btn-secondary" type="button">
-              Gerar PDF
-            </button>
+            <button id="btn-excel" class="btn btn-secondary" type="button">Baixar Excel</button>
+            <button id="btn-pdf" class="btn btn-secondary" type="button">Gerar PDF</button>
           </div>
         </div>
 
-        <div class="table-wrap">
-          <table>
-            <thead>
-              <tr>
-                <th>Nome completo</th>
-                <th>Apelido</th>
-                <th>CPF</th>
-                <th>Passagens</th>
-                <th>Total</th>
-                <th>Ações</th>
-              </tr>
-            </thead>
-            <tbody id="lista"></tbody>
-          </table>
-        </div>
-
-        <p id="vazio" class="empty hidden">Nenhum cadastro encontrado.</p>
+        <div class="family-admin-list" id="familias-admin"></div>
+        <p id="admin-vazio" class="empty hidden">Nenhuma família encontrada.</p>
       </div>
     </section>
 
@@ -280,16 +293,34 @@ document.querySelector('#app').innerHTML = `
       <div class="footer-event">Evento em Mambucaba • 28/11/2026</div>
     </footer>
   </main>
+
+  <dialog id="dialog-tipo" class="member-dialog">
+    <form method="dialog" class="dialog-card">
+      <span class="tag">NOVO MEMBRO</span>
+      <h3>Quem você deseja adicionar?</h3>
+      <div class="member-type-grid">
+        <button value="ESPOSA/COMPANHEIRA" class="member-type" type="submit">Esposa / Companheira</button>
+        <button value="FILHO(A)" class="member-type" type="submit">Filho(a)</button>
+        <button value="OUTRO MEMBRO" class="member-type" type="submit">Outro membro</button>
+      </div>
+      <button value="cancel" class="btn btn-outline dialog-cancel" type="submit">Cancelar</button>
+    </form>
+  </dialog>
 `;
 
 const el = {
-  form: document.querySelector('#form-inscricao'),
-  nome: document.querySelector('#nome'),
-  apelido: document.querySelector('#apelido'),
-  cpf: document.querySelector('#cpf'),
-  quantidade: document.querySelector('#quantidade'),
+  form: document.querySelector('#form-familia'),
+  responsavelNome: document.querySelector('#responsavel-nome'),
+  responsavelApelido: document.querySelector('#responsavel-apelido'),
+  responsavelCpf: document.querySelector('#responsavel-cpf'),
+  membrosContainer: document.querySelector('#membros-container'),
+  semMembros: document.querySelector('#sem-membros'),
+  btnAdicionarMembro: document.querySelector('#btn-adicionar-membro'),
+  dialogTipo: document.querySelector('#dialog-tipo'),
   consentimento: document.querySelector('#consentimento'),
-  total: document.querySelector('#valor-total'),
+  resumoFamilia: document.querySelector('#resumo-familia'),
+  resumoPassagens: document.querySelector('#resumo-passagens'),
+  resumoTotal: document.querySelector('#resumo-total'),
   btnEnviar: document.querySelector('#btn-enviar'),
   formMsg: document.querySelector('#form-msg'),
   comprovante: document.querySelector('#comprovante'),
@@ -297,7 +328,8 @@ const el = {
 
   publicLista: document.querySelector('#public-lista'),
   publicVazio: document.querySelector('#public-vazio'),
-  publicTotalParticipantes: document.querySelector('#public-total-participantes'),
+  publicTotalFamilias: document.querySelector('#public-total-familias'),
+  publicTotalPassageiros: document.querySelector('#public-total-passageiros'),
   publicTotalPassagens: document.querySelector('#public-total-passagens'),
 
   abrirAdmin: document.querySelector('#abrir-admin'),
@@ -308,13 +340,13 @@ const el = {
   loginMsg: document.querySelector('#login-msg'),
   dashboard: document.querySelector('#dashboard'),
   btnSair: document.querySelector('#btn-sair'),
-
-  statCadastros: document.querySelector('#stat-cadastros'),
+  busca: document.querySelector('#busca'),
+  familiasAdmin: document.querySelector('#familias-admin'),
+  adminVazio: document.querySelector('#admin-vazio'),
+  statFamilias: document.querySelector('#stat-familias'),
+  statPassageiros: document.querySelector('#stat-passageiros'),
   statPassagens: document.querySelector('#stat-passagens'),
   statValor: document.querySelector('#stat-valor'),
-  busca: document.querySelector('#busca'),
-  lista: document.querySelector('#lista'),
-  vazio: document.querySelector('#vazio'),
   btnExcel: document.querySelector('#btn-excel'),
   btnPdf: document.querySelector('#btn-pdf'),
 };
@@ -333,7 +365,6 @@ function formatCpf(value) {
 
 function cpfIsValid(value) {
   const cpf = digits(value);
-
   if (cpf.length !== 11 || /^(\d)\1{10}$/.test(cpf)) return false;
 
   const checkDigit = (slice, factor) => {
@@ -343,15 +374,15 @@ function cpfIsValid(value) {
     return result === 10 ? 0 : result;
   };
 
-  const d1 = checkDigit(cpf.slice(0, 9), 10);
-  const d2 = checkDigit(cpf.slice(0, 10), 11);
-
-  return d1 === Number(cpf[9]) && d2 === Number(cpf[10]);
+  return (
+    checkDigit(cpf.slice(0, 9), 10) === Number(cpf[9]) &&
+    checkDigit(cpf.slice(0, 10), 11) === Number(cpf[10])
+  );
 }
 
 function maskCpf(value) {
   const cpf = digits(value);
-  return cpf.length === 11 ? `***.***.***-${cpf.slice(-2)}` : '***';
+  return cpf.length === 11 ? `***.***.***-${cpf.slice(-2)}` : '—';
 }
 
 function cleanText(value) {
@@ -383,13 +414,13 @@ function escapeHtml(value) {
     .replaceAll("'", '&#039;');
 }
 
-function formatPublicDate(value) {
+function makeId() {
+  return `${Date.now()}_${Math.random().toString(36).slice(2, 9)}`;
+}
+
+function formatDate(value) {
   if (!value) return '—';
-
-  const date = typeof value.toDate === 'function'
-    ? value.toDate()
-    : new Date(value);
-
+  const date = typeof value.toDate === 'function' ? value.toDate() : new Date(value);
   if (Number.isNaN(date.getTime())) return '—';
 
   return new Intl.DateTimeFormat('pt-BR', {
@@ -399,42 +430,210 @@ function formatPublicDate(value) {
   }).format(date);
 }
 
-function refreshTotal() {
-  const qtd = Number(el.quantidade.value || 1);
-  el.total.textContent = dinheiro.format(qtd * VALOR_PASSAGEM);
+function totalPessoas() {
+  return 1 + state.membros.length;
 }
 
-el.quantidade.addEventListener('change', refreshTotal);
-el.cpf.addEventListener('input', () => {
-  el.cpf.value = formatCpf(el.cpf.value);
+function refreshSummary() {
+  const pessoas = totalPessoas();
+  el.resumoFamilia.textContent = `${pessoas} ${pessoas === 1 ? 'pessoa' : 'pessoas'}`;
+  el.resumoPassagens.textContent = pessoas;
+  el.resumoTotal.textContent = dinheiro.format(pessoas * VALOR_PASSAGEM);
+  el.semMembros.classList.toggle('hidden', state.membros.length > 0);
+}
+
+function memberTemplate(member) {
+  const isChild = member.tipo === 'FILHO(A)';
+  const cpfObrigatorio = !isChild;
+
+  return `
+    <article class="member-card" data-id="${member.id}">
+      <div class="member-card-head">
+        <div>
+          <span class="member-kind">${escapeHtml(member.tipo)}</span>
+          <strong>Membro ${state.membros.findIndex((m) => m.id === member.id) + 1}</strong>
+        </div>
+        <button class="remove-member" type="button" data-remove="${member.id}">Remover</button>
+      </div>
+
+      <div class="member-fields">
+        <label class="field-wide">
+          Nome completo
+          <input
+            data-field="nome"
+            value="${escapeHtml(member.nome)}"
+            maxlength="120"
+            placeholder="Nome completo"
+            required
+          />
+        </label>
+
+        <label>
+          Apelido <span class="optional">(opcional)</span>
+          <input
+            data-field="apelido"
+            value="${escapeHtml(member.apelido)}"
+            maxlength="40"
+            placeholder="Apelido"
+          />
+        </label>
+
+        <label>
+          CPF ${isChild ? '<span class="optional">(opcional)</span>' : ''}
+          <input
+            data-field="cpf"
+            value="${escapeHtml(formatCpf(member.cpf))}"
+            inputmode="numeric"
+            maxlength="14"
+            placeholder="000.000.000-00"
+            ${cpfObrigatorio ? 'required' : ''}
+          />
+        </label>
+
+        ${isChild ? `
+          <label>
+            Idade
+            <input
+              data-field="idade"
+              value="${member.idade ?? ''}"
+              inputmode="numeric"
+              type="number"
+              min="0"
+              max="17"
+              placeholder="Idade"
+              required
+            />
+          </label>
+        ` : ''}
+      </div>
+    </article>
+  `;
+}
+
+function renderMembers() {
+  el.membrosContainer.innerHTML = state.membros.map(memberTemplate).join('');
+  refreshSummary();
+}
+
+el.btnAdicionarMembro.addEventListener('click', () => {
+  if (state.membros.length >= LIMITE_MEMBROS - 1) {
+    alert(`Limite máximo de ${LIMITE_MEMBROS} passageiros por família.`);
+    return;
+  }
+  el.dialogTipo.showModal();
 });
+
+el.dialogTipo.addEventListener('close', () => {
+  const tipo = el.dialogTipo.returnValue;
+  if (!['ESPOSA/COMPANHEIRA', 'FILHO(A)', 'OUTRO MEMBRO'].includes(tipo)) return;
+
+  state.membros.push({
+    id: makeId(),
+    tipo,
+    nome: '',
+    apelido: '',
+    cpf: '',
+    idade: null,
+  });
+
+  renderMembers();
+});
+
+el.membrosContainer.addEventListener('input', (event) => {
+  const card = event.target.closest('.member-card');
+  if (!card) return;
+
+  const member = state.membros.find((item) => item.id === card.dataset.id);
+  if (!member) return;
+
+  const field = event.target.dataset.field;
+  if (!field) return;
+
+  if (field === 'cpf') {
+    event.target.value = formatCpf(event.target.value);
+    member.cpf = digits(event.target.value);
+  } else if (field === 'idade') {
+    member.idade = event.target.value === '' ? null : Number(event.target.value);
+  } else {
+    member[field] = event.target.value;
+  }
+});
+
+el.membrosContainer.addEventListener('click', (event) => {
+  const button = event.target.closest('[data-remove]');
+  if (!button) return;
+
+  state.membros = state.membros.filter((item) => item.id !== button.dataset.remove);
+  renderMembers();
+});
+
+el.responsavelCpf.addEventListener('input', () => {
+  el.responsavelCpf.value = formatCpf(el.responsavelCpf.value);
+});
+
+function validateFamily() {
+  const responsavel = {
+    tipo: 'RESPONSÁVEL',
+    nome: upperText(el.responsavelNome.value),
+    apelido: upperText(el.responsavelApelido.value),
+    cpf: digits(el.responsavelCpf.value),
+    idade: null,
+  };
+
+  if (!fullNameIsValid(responsavel.nome)) {
+    return { error: 'Informe o nome completo do responsável.' };
+  }
+
+  if (!cpfIsValid(responsavel.cpf)) {
+    return { error: 'Informe um CPF válido para o responsável.' };
+  }
+
+  const membros = [];
+
+  for (const item of state.membros) {
+    const membro = {
+      tipo: item.tipo,
+      nome: upperText(item.nome),
+      apelido: upperText(item.apelido),
+      cpf: digits(item.cpf),
+      idade: item.tipo === 'FILHO(A)' ? Number(item.idade) : null,
+    };
+
+    if (!fullNameIsValid(membro.nome)) {
+      return { error: `Informe o nome completo de ${membro.tipo}.` };
+    }
+
+    if (membro.tipo === 'FILHO(A)') {
+      if (!Number.isInteger(membro.idade) || membro.idade < 0 || membro.idade > 17) {
+        return { error: `Informe uma idade válida (0 a 17 anos) para ${membro.nome}.` };
+      }
+      if (membro.cpf && !cpfIsValid(membro.cpf)) {
+        return { error: `O CPF informado para ${membro.nome} não é válido.` };
+      }
+    } else {
+      if (!cpfIsValid(membro.cpf)) {
+        return { error: `Informe um CPF válido para ${membro.nome}.` };
+      }
+    }
+
+    membros.push(membro);
+  }
+
+  const cpfs = [responsavel.cpf, ...membros.map((m) => m.cpf).filter(Boolean)];
+  if (new Set(cpfs).size !== cpfs.length) {
+    return { error: 'Há CPF repetido dentro da própria família.' };
+  }
+
+  return { responsavel, membros };
+}
 
 el.form.addEventListener('submit', async (event) => {
   event.preventDefault();
   el.formMsg.textContent = '';
 
-  const nome = upperText(el.nome.value);
-  const apelido = upperText(el.apelido.value);
-  const cpf = digits(el.cpf.value);
-  const quantidade = Number(el.quantidade.value);
-  const valorTotal = quantidade * VALOR_PASSAGEM;
-  const nomePublico = publicName(nome, apelido);
-
-  if (!fullNameIsValid(nome)) {
-    el.formMsg.textContent = 'Informe seu nome completo.';
-    el.nome.focus();
-    return;
-  }
-
-  if (apelido.length > 40) {
-    el.formMsg.textContent = 'O apelido deve ter no máximo 40 caracteres.';
-    el.apelido.focus();
-    return;
-  }
-
-  if (!cpfIsValid(cpf)) {
-    el.formMsg.textContent = 'Informe um CPF válido.';
-    el.cpf.focus();
+  const result = validateFamily();
+  if (result.error) {
+    el.formMsg.textContent = result.error;
     return;
   }
 
@@ -443,98 +642,134 @@ el.form.addEventListener('submit', async (event) => {
     return;
   }
 
+  const { responsavel, membros } = result;
+  const familiaId = responsavel.cpf;
+  const pessoas = 1 + membros.length;
+  const valorTotal = pessoas * VALOR_PASSAGEM;
+  const nomePublico = publicName(responsavel.nome, responsavel.apelido);
+
   el.btnEnviar.disabled = true;
   el.btnEnviar.textContent = 'Salvando...';
 
   try {
     const batch = writeBatch(db);
 
-    batch.set(doc(db, 'inscricoes', cpf), {
-      nome,
-      apelido,
-      cpf,
-      quantidade,
+    batch.set(doc(db, 'familias', familiaId), {
+      responsavel,
+      membros,
+      totalPessoas: pessoas,
+      totalPassagens: pessoas,
       valorUnitario: VALOR_PASSAGEM,
       valorTotal,
       criadoEm: serverTimestamp(),
     });
 
-    batch.set(doc(db, 'participantesPublicos', cpf), {
+    batch.set(doc(db, 'familiasPublicas', familiaId), {
       nomePublico,
-      quantidade,
+      totalPessoas: pessoas,
+      totalPassagens: pessoas,
       criadoEm: serverTimestamp(),
     });
 
     await batch.commit();
 
     el.comprovanteDados.innerHTML = `
-      <p><strong>${escapeHtml(nome)}</strong>${apelido ? ` <span class="nick">(${escapeHtml(apelido)})</span>` : ''}</p>
-      <p>CPF: ${maskCpf(cpf)}</p>
-      <p>${quantidade} ${quantidade === 1 ? 'passagem' : 'passagens'} • <strong>${dinheiro.format(valorTotal)}</strong></p>
+      <p><strong>${escapeHtml(responsavel.nome)}</strong>${responsavel.apelido ? ` <span class="nick">(${escapeHtml(responsavel.apelido)})</span>` : ''}</p>
+      <p>CPF do responsável: ${maskCpf(responsavel.cpf)}</p>
+      <p>${pessoas} ${pessoas === 1 ? 'passageiro' : 'passageiros'} • <strong>${dinheiro.format(valorTotal)}</strong></p>
       <p>Mambucaba • 28/11/2026</p>
     `;
 
     el.comprovante.classList.remove('hidden');
     el.form.reset();
-    el.quantidade.value = '1';
-    refreshTotal();
-    el.formMsg.textContent = 'Cadastro realizado com sucesso.';
+    state.membros = [];
+    renderMembers();
+    el.formMsg.textContent = 'Cadastro da família realizado com sucesso.';
     el.comprovante.scrollIntoView({ behavior: 'smooth', block: 'center' });
 
-    await loadPublicList();
+    await loadPublicFamilies();
   } catch (error) {
     console.error(error);
-
     if (error?.code === 'permission-denied') {
       el.formMsg.textContent =
-        'Este CPF já possui cadastro ou a inscrição não pôde ser autorizada.';
+        'A inscrição foi bloqueada pelas regras de segurança. Atualize as regras do Firestore e tente novamente.';
     } else {
-      el.formMsg.textContent =
-        'Não foi possível salvar agora. Tente novamente.';
+      el.formMsg.textContent = 'Não foi possível salvar agora. Tente novamente.';
     }
   } finally {
     el.btnEnviar.disabled = false;
-    el.btnEnviar.textContent = 'Confirmar participação';
+    el.btnEnviar.textContent = 'Confirmar inscrição da família';
   }
 });
 
-async function loadPublicList() {
+async function loadPublicFamilies() {
   try {
-    const q = query(collection(db, 'participantesPublicos'), orderBy('criadoEm'));
-    const snapshot = await getDocs(q);
+    const [familiasSnap, antigosSnap] = await Promise.all([
+      getDocs(collection(db, 'familiasPublicas')),
+      getDocs(collection(db, 'participantesPublicos')),
+    ]);
 
-    state.publicos = snapshot.docs.map((snap) => ({
+    const familiasNovas = familiasSnap.docs.map((snap) => ({
       id: snap.id,
+      legacy: false,
       ...snap.data(),
     }));
 
-    renderPublicList();
+    const idsNovos = new Set(familiasNovas.map((item) => item.id));
+
+    const cadastrosAntigos = antigosSnap.docs
+      .filter((snap) => !idsNovos.has(snap.id))
+      .map((snap) => {
+        const data = snap.data();
+        return {
+          id: snap.id,
+          legacy: true,
+          nomePublico: data.nomePublico || 'CADASTRO ANTERIOR',
+          totalPessoas: 1,
+          totalPassagens: Number(data.quantidade || 1),
+          criadoEm: data.criadoEm || null,
+        };
+      });
+
+    state.familiasPublicas = [...familiasNovas, ...cadastrosAntigos].sort((a, b) => {
+      const da = a.criadoEm?.toMillis?.() || 0;
+      const dbb = b.criadoEm?.toMillis?.() || 0;
+      return da - dbb;
+    });
+
+    renderPublicFamilies();
   } catch (error) {
     console.error(error);
-    state.publicos = [];
-    renderPublicList();
+    state.familiasPublicas = [];
+    renderPublicFamilies();
   }
 }
-
-function renderPublicList() {
-  const totalPassagens = state.publicos.reduce(
-    (sum, item) => sum + Number(item.quantidade || 0),
+function renderPublicFamilies() {
+  const totalPassageiros = state.familiasPublicas.reduce(
+    (sum, item) => sum + Number(item.totalPessoas || 0),
     0
   );
 
-  el.publicTotalParticipantes.textContent = state.publicos.length;
+  const totalPassagens = state.familiasPublicas.reduce(
+    (sum, item) => sum + Number(item.totalPassagens || 0),
+    0
+  );
+
+  el.publicTotalFamilias.textContent = state.familiasPublicas.length;
+  el.publicTotalPassageiros.textContent = totalPassageiros;
   el.publicTotalPassagens.textContent = totalPassagens;
 
   el.publicLista.innerHTML = '';
-  el.publicVazio.classList.toggle('hidden', state.publicos.length > 0);
+  el.publicVazio.classList.toggle('hidden', state.familiasPublicas.length > 0);
 
-  state.publicos.forEach((item, index) => {
+  state.familiasPublicas.forEach((item, index) => {
     const tr = document.createElement('tr');
     tr.innerHTML = `
       <td data-label="#">${index + 1}</td>
-      <td data-label="Nome"><strong>${escapeHtml(upperText(item.nomePublico))}</strong></td>
-      <td data-label="Passagens">${Number(item.quantidade)}</td>
-      <td data-label="Data">${formatPublicDate(item.criadoEm)}</td>
+      <td data-label="Responsável"><strong>${escapeHtml(upperText(item.nomePublico))}</strong></td>
+      <td data-label="Família">${item.legacy ? 'CADASTRO ANTERIOR' : `${Number(item.totalPessoas)} ${Number(item.totalPessoas) === 1 ? 'pessoa' : 'pessoas'}`}</td>
+      <td data-label="Passagens">${Number(item.totalPassagens)}</td>
+      <td data-label="Data">${formatDate(item.criadoEm)}</td>
     `;
     el.publicLista.appendChild(tr);
   });
@@ -542,7 +777,6 @@ function renderPublicList() {
 
 el.abrirAdmin.addEventListener('click', () => {
   el.adminPanel.classList.toggle('hidden');
-
   if (!el.adminPanel.classList.contains('hidden')) {
     el.adminPanel.scrollIntoView({ behavior: 'smooth', block: 'start' });
   }
@@ -571,77 +805,88 @@ onAuthStateChanged(auth, async (user) => {
     el.dashboard.classList.remove('hidden');
     el.btnSair.classList.remove('hidden');
     el.loginMsg.textContent = '';
-    await loadRegistrations();
+    await loadPrivateFamilies();
   } else {
-    state.inscricoes = [];
+    state.familiasPrivadas = [];
     el.loginBox.classList.remove('hidden');
     el.dashboard.classList.add('hidden');
     el.btnSair.classList.add('hidden');
   }
 });
 
-async function loadRegistrations() {
+async function loadPrivateFamilies() {
   try {
-    const q = query(collection(db, 'inscricoes'), orderBy('nome'));
-    const snapshot = await getDocs(q);
+    const [familiasSnap, antigosSnap] = await Promise.all([
+      getDocs(collection(db, 'familias')),
+      getDocs(collection(db, 'inscricoes')),
+    ]);
 
-    state.inscricoes = snapshot.docs.map((snap) => ({
+    const familiasNovas = familiasSnap.docs.map((snap) => ({
       id: snap.id,
+      legacy: false,
       ...snap.data(),
     }));
 
-    await syncMissingPublicRecords();
-    refreshDashboard();
+    const idsNovos = new Set(familiasNovas.map((item) => item.id));
+
+    const cadastrosAntigos = antigosSnap.docs
+      .filter((snap) => !idsNovos.has(snap.id))
+      .map((snap) => {
+        const data = snap.data();
+        return {
+          id: snap.id,
+          legacy: true,
+          responsavel: {
+            tipo: 'CADASTRO ANTERIOR',
+            nome: upperText(data.nome || ''),
+            apelido: upperText(data.apelido || ''),
+            cpf: data.cpf || snap.id,
+            idade: null,
+          },
+          membros: [],
+          totalPessoas: 1,
+          totalPassagens: Number(data.quantidade || 1),
+          valorUnitario: Number(data.valorUnitario || VALOR_PASSAGEM),
+          valorTotal: Number(data.valorTotal || (Number(data.quantidade || 1) * VALOR_PASSAGEM)),
+          criadoEm: data.criadoEm || null,
+        };
+      });
+
+    state.familiasPrivadas = [...familiasNovas, ...cadastrosAntigos].sort((a, b) =>
+      upperText(a.responsavel?.nome || '').localeCompare(
+        upperText(b.responsavel?.nome || ''),
+        'pt-BR'
+      )
+    );
+
+    refreshAdmin();
   } catch (error) {
     console.error(error);
-    alert('Não foi possível carregar as inscrições.');
+    alert('Não foi possível carregar as famílias e os cadastros anteriores.');
   }
 }
+function allPassengers() {
+  return state.familiasPrivadas.flatMap((familia) => {
+    const base = {
+      familiaId: familia.id,
+      familiaResponsavel: familia.responsavel?.nome || '',
+    };
 
-async function syncMissingPublicRecords() {
-  try {
-    const publicSnapshot = await getDocs(collection(db, 'participantesPublicos'));
-    const publicIds = new Set(publicSnapshot.docs.map((snap) => snap.id));
-    const missing = state.inscricoes.filter((item) => !publicIds.has(item.id));
-
-    if (!missing.length) {
-      await loadPublicList();
-      return;
-    }
-
-    const batch = writeBatch(db);
-
-    missing.forEach((item) => {
-      batch.set(doc(db, 'participantesPublicos', item.id), {
-        nomePublico: publicName(item.nome, item.apelido || ''),
-        quantidade: Number(item.quantidade || 1),
-        criadoEm: item.criadoEm || serverTimestamp(),
-      });
-    });
-
-    await batch.commit();
-    await loadPublicList();
-  } catch (error) {
-    console.error('Falha ao sincronizar lista pública:', error);
-  }
-}
-
-function refreshDashboard() {
-  const passagens = state.inscricoes.reduce(
-    (sum, item) => sum + Number(item.quantidade || 0),
-    0
-  );
-
-  const total = state.inscricoes.reduce(
-    (sum, item) => sum + Number(item.valorTotal || 0),
-    0
-  );
-
-  el.statCadastros.textContent = state.inscricoes.length;
-  el.statPassagens.textContent = passagens;
-  el.statValor.textContent = dinheiro.format(total);
-
-  renderTable();
+    return [
+      {
+        ...base,
+        tipo: familia.legacy ? 'CADASTRO ANTERIOR' : 'RESPONSÁVEL',
+        nome: familia.responsavel?.nome || '',
+        apelido: familia.responsavel?.apelido || '',
+        cpf: familia.responsavel?.cpf || '',
+        idade: null,
+      },
+      ...(familia.membros || []).map((membro) => ({
+        ...base,
+        ...membro,
+      })),
+    ];
+  });
 }
 
 function normalizeSearch(value) {
@@ -652,121 +897,136 @@ function normalizeSearch(value) {
     .trim();
 }
 
-function filteredItems() {
+function filteredFamilies() {
   const term = normalizeSearch(state.filtro);
-  if (!term) return state.inscricoes;
+  if (!term) return state.familiasPrivadas;
 
-  return state.inscricoes.filter((item) => {
-    const byName = normalizeSearch(item.nome).includes(term);
-    const byNickname = normalizeSearch(item.apelido || '').includes(term);
-    const byCpf = digits(item.cpf).includes(digits(term));
-    return byName || byNickname || byCpf;
+  return state.familiasPrivadas.filter((familia) => {
+    const haystack = [
+      familia.responsavel?.nome,
+      familia.responsavel?.apelido,
+      familia.responsavel?.cpf,
+      ...(familia.membros || []).flatMap((m) => [m.nome, m.apelido, m.cpf, m.tipo]),
+    ]
+      .map((value) => normalizeSearch(value))
+      .join(' ');
+
+    return haystack.includes(term) || haystack.includes(digits(term));
   });
 }
 
 el.busca.addEventListener('input', () => {
   state.filtro = el.busca.value;
-  renderTable();
+  renderAdminFamilies();
 });
 
-function renderTable() {
-  const items = filteredItems();
+function refreshAdmin() {
+  const passageiros = state.familiasPrivadas.reduce(
+    (sum, familia) => sum + Number(familia.totalPessoas || 0),
+    0
+  );
+  const passagens = state.familiasPrivadas.reduce(
+    (sum, familia) => sum + Number(familia.totalPassagens || 0),
+    0
+  );
+  const valor = state.familiasPrivadas.reduce(
+    (sum, familia) => sum + Number(familia.valorTotal || 0),
+    0
+  );
 
-  el.lista.innerHTML = '';
-  el.vazio.classList.toggle('hidden', items.length > 0);
+  el.statFamilias.textContent = state.familiasPrivadas.length;
+  el.statPassageiros.textContent = passageiros;
+  el.statPassagens.textContent = passagens;
+  el.statValor.textContent = dinheiro.format(valor);
 
-  for (const item of items) {
-    const tr = document.createElement('tr');
-
-    tr.innerHTML = `
-      <td data-label="Nome">${escapeHtml(upperText(item.nome))}</td>
-      <td data-label="Apelido">${item.apelido ? escapeHtml(upperText(item.apelido)) : '—'}</td>
-      <td data-label="CPF">${formatCpf(item.cpf)}</td>
-      <td data-label="Passagens">${Number(item.quantidade)}</td>
-      <td data-label="Total">${dinheiro.format(Number(item.valorTotal || 0))}</td>
-      <td data-label="Ações" class="actions">
-        <button class="row-action" data-action="editar" data-id="${item.id}">Editar</button>
-        <button class="row-action danger" data-action="excluir" data-id="${item.id}">Excluir</button>
-      </td>
-    `;
-
-    el.lista.appendChild(tr);
-  }
+  renderAdminFamilies();
 }
 
-el.lista.addEventListener('click', async (event) => {
-  const button = event.target.closest('button[data-action]');
+function renderAdminFamilies() {
+  const familias = filteredFamilies();
+  el.familiasAdmin.innerHTML = '';
+  el.adminVazio.classList.toggle('hidden', familias.length > 0);
+
+  familias.forEach((familia) => {
+    const passageiros = [
+      {
+        tipo: familia.legacy ? 'CADASTRO ANTERIOR' : 'RESPONSÁVEL',
+        ...familia.responsavel,
+      },
+      ...(familia.membros || []),
+    ];
+
+    const card = document.createElement('article');
+    card.className = 'admin-family-card';
+    card.innerHTML = `
+      <div class="admin-family-head">
+        <div>
+          <span class="tag">${familia.legacy ? 'CADASTRO ANTERIOR' : 'FAMÍLIA'}</span>
+          <h3>${escapeHtml(upperText(familia.responsavel?.nome || ''))}</h3>
+          <p>${familia.legacy ? `${Number(familia.totalPassagens || 1)} passagem(ns) no modelo anterior` : `${passageiros.length} ${passageiros.length === 1 ? 'passageiro' : 'passageiros'}`} • ${dinheiro.format(Number(familia.valorTotal || 0))}</p>
+        </div>
+        <button class="row-action danger" type="button" data-delete-family="${familia.id}">
+          Excluir família
+        </button>
+      </div>
+
+      <div class="table-wrap">
+        <table class="admin-passenger-table">
+          <thead>
+            <tr>
+              <th>Vínculo</th>
+              <th>Nome completo</th>
+              <th>Apelido</th>
+              <th>CPF</th>
+              <th>Idade</th>
+            </tr>
+          </thead>
+          <tbody>
+            ${passageiros.map((p) => `
+              <tr>
+                <td data-label="Vínculo">${escapeHtml(p.tipo || '—')}</td>
+                <td data-label="Nome">${escapeHtml(upperText(p.nome || ''))}</td>
+                <td data-label="Apelido">${p.apelido ? escapeHtml(upperText(p.apelido)) : '—'}</td>
+                <td data-label="CPF">${p.cpf ? formatCpf(p.cpf) : '—'}</td>
+                <td data-label="Idade">${p.idade ?? '—'}</td>
+              </tr>
+            `).join('')}
+          </tbody>
+        </table>
+      </div>
+    `;
+
+    el.familiasAdmin.appendChild(card);
+  });
+}
+
+el.familiasAdmin.addEventListener('click', async (event) => {
+  const button = event.target.closest('[data-delete-family]');
   if (!button) return;
 
-  const item = state.inscricoes.find((row) => row.id === button.dataset.id);
-  if (!item) return;
+  const familia = state.familiasPrivadas.find((item) => item.id === button.dataset.deleteFamily);
+  if (!familia) return;
 
-  if (button.dataset.action === 'editar') {
-    const novoNome = prompt('Nome completo:', item.nome);
-    if (novoNome === null) return;
+  if (!confirm(`Excluir a família de ${familia.responsavel?.nome}?`)) return;
 
-    const novoApelido = prompt('Apelido (opcional):', item.apelido || '');
-    if (novoApelido === null) return;
+  try {
+    const batch = writeBatch(db);
 
-    const novaQtd = prompt('Quantidade de passagens (1 a 20):', item.quantidade);
-    if (novaQtd === null) return;
-
-    const nome = upperText(novoNome);
-    const apelido = upperText(novoApelido);
-    const quantidade = Number(novaQtd);
-
-    if (!fullNameIsValid(nome)) {
-      alert('Informe um nome completo válido.');
-      return;
+    if (familia.legacy) {
+      batch.delete(doc(db, 'inscricoes', familia.id));
+      batch.delete(doc(db, 'participantesPublicos', familia.id));
+    } else {
+      batch.delete(doc(db, 'familias', familia.id));
+      batch.delete(doc(db, 'familiasPublicas', familia.id));
     }
 
-    if (apelido.length > 40) {
-      alert('O apelido deve ter no máximo 40 caracteres.');
-      return;
-    }
+    await batch.commit();
 
-    if (!Number.isInteger(quantidade) || quantidade < 1 || quantidade > 20) {
-      alert('A quantidade deve ser um número inteiro entre 1 e 20.');
-      return;
-    }
-
-    try {
-      const batch = writeBatch(db);
-
-      batch.update(doc(db, 'inscricoes', item.id), {
-        nome,
-        apelido,
-        quantidade,
-        valorTotal: quantidade * VALOR_PASSAGEM,
-      });
-
-      batch.set(doc(db, 'participantesPublicos', item.id), {
-        nomePublico: publicName(nome, apelido),
-        quantidade,
-        criadoEm: item.criadoEm || serverTimestamp(),
-      });
-
-      await batch.commit();
-      await loadRegistrations();
-    } catch (error) {
-      console.error(error);
-      alert('Não foi possível atualizar o cadastro.');
-    }
-  }
-
-  if (button.dataset.action === 'excluir') {
-    if (!confirm(`Excluir o cadastro de ${item.nome}?`)) return;
-
-    try {
-      const batch = writeBatch(db);
-      batch.delete(doc(db, 'inscricoes', item.id));
-      batch.delete(doc(db, 'participantesPublicos', item.id));
-      await batch.commit();
-      await loadRegistrations();
-    } catch (error) {
-      console.error(error);
-      alert('Não foi possível excluir o cadastro.');
-    }
+    await loadPrivateFamilies();
+    await loadPublicFamilies();
+  } catch (error) {
+    console.error(error);
+    alert('Não foi possível excluir a família.');
   }
 });
 
@@ -780,41 +1040,40 @@ function xmlEscape(value) {
 }
 
 el.btnExcel.addEventListener('click', () => {
-  if (!state.inscricoes.length) {
-    alert('Não há inscrições para exportar.');
+  const passageiros = allPassengers();
+  if (!passageiros.length) {
+    alert('Não há passageiros para exportar.');
     return;
   }
 
-  const rows = state.inscricoes
-    .map((item, index) => `
-      <Row>
-        <Cell><Data ss:Type="Number">${index + 1}</Data></Cell>
-        <Cell><Data ss:Type="String">${xmlEscape(item.nome)}</Data></Cell>
-        <Cell><Data ss:Type="String">${xmlEscape(item.apelido || '')}</Data></Cell>
-        <Cell><Data ss:Type="String">${formatCpf(item.cpf)}</Data></Cell>
-        <Cell><Data ss:Type="Number">${Number(item.quantidade)}</Data></Cell>
-        <Cell><Data ss:Type="Number">${VALOR_PASSAGEM}</Data></Cell>
-        <Cell><Data ss:Type="Number">${Number(item.valorTotal || 0)}</Data></Cell>
-      </Row>
-    `)
-    .join('');
+  const rows = passageiros.map((item, index) => `
+    <Row>
+      <Cell><Data ss:Type="Number">${index + 1}</Data></Cell>
+      <Cell><Data ss:Type="String">${xmlEscape(item.familiaResponsavel)}</Data></Cell>
+      <Cell><Data ss:Type="String">${xmlEscape(item.tipo || '')}</Data></Cell>
+      <Cell><Data ss:Type="String">${xmlEscape(item.nome || '')}</Data></Cell>
+      <Cell><Data ss:Type="String">${xmlEscape(item.apelido || '')}</Data></Cell>
+      <Cell><Data ss:Type="String">${item.cpf ? formatCpf(item.cpf) : ''}</Data></Cell>
+      <Cell><Data ss:Type="String">${item.idade ?? ''}</Data></Cell>
+      <Cell><Data ss:Type="Number">${VALOR_PASSAGEM}</Data></Cell>
+    </Row>
+  `).join('');
 
   const xml = `<?xml version="1.0"?>
 <?mso-application progid="Excel.Sheet"?>
 <Workbook xmlns="urn:schemas-microsoft-com:office:spreadsheet"
- xmlns:o="urn:schemas-microsoft-com:office:office"
- xmlns:x="urn:schemas-microsoft-com:office:excel"
  xmlns:ss="urn:schemas-microsoft-com:office:spreadsheet">
- <Worksheet ss:Name="Inscrições">
+ <Worksheet ss:Name="Passageiros">
   <Table>
    <Row>
     <Cell><Data ss:Type="String">Nº</Data></Cell>
+    <Cell><Data ss:Type="String">Família / Responsável</Data></Cell>
+    <Cell><Data ss:Type="String">Vínculo</Data></Cell>
     <Cell><Data ss:Type="String">Nome completo</Data></Cell>
     <Cell><Data ss:Type="String">Apelido</Data></Cell>
     <Cell><Data ss:Type="String">CPF</Data></Cell>
-    <Cell><Data ss:Type="String">Passagens</Data></Cell>
-    <Cell><Data ss:Type="String">Valor unitário</Data></Cell>
-    <Cell><Data ss:Type="String">Valor total</Data></Cell>
+    <Cell><Data ss:Type="String">Idade</Data></Cell>
+    <Cell><Data ss:Type="String">Passagem</Data></Cell>
    </Row>
    ${rows}
   </Table>
@@ -825,12 +1084,13 @@ el.btnExcel.addEventListener('click', () => {
     type: 'application/vnd.ms-excel;charset=utf-8',
   });
 
-  downloadBlob(blob, 'Mambucaba_2026_Inscricoes.xls');
+  downloadBlob(blob, 'Mambucaba_2026_Passageiros.xls');
 });
 
 el.btnPdf.addEventListener('click', () => {
-  if (!state.inscricoes.length) {
-    alert('Não há inscrições para exportar.');
+  const passageiros = allPassengers();
+  if (!passageiros.length) {
+    alert('Não há passageiros para exportar.');
     return;
   }
 
@@ -840,18 +1100,12 @@ el.btnPdf.addEventListener('click', () => {
     format: 'a4',
   });
 
-  const totalPassagens = state.inscricoes.reduce(
-    (sum, item) => sum + Number(item.quantidade || 0),
-    0
-  );
-
-  const totalValor = state.inscricoes.reduce(
-    (sum, item) => sum + Number(item.valorTotal || 0),
-    0
-  );
+  const totalFamilias = state.familiasPrivadas.length;
+  const totalPassageiros = passageiros.length;
+  const totalValor = totalPassageiros * VALOR_PASSAGEM;
 
   pdf.setFontSize(18);
-  pdf.text('Mambucaba 2026 — Relação de Participantes', 14, 16);
+  pdf.text('Mambucaba 2026 — Relação de Passageiros', 14, 16);
 
   pdf.setFontSize(10);
   pdf.text(
@@ -861,41 +1115,39 @@ el.btnPdf.addEventListener('click', () => {
   );
 
   pdf.text(
-    `Cadastros: ${state.inscricoes.length} | Passagens: ${totalPassagens} | Valor total: ${dinheiro.format(totalValor)}`,
+    `Famílias: ${totalFamilias} | Passageiros: ${totalPassageiros} | Valor total: ${dinheiro.format(totalValor)}`,
     14,
     29
   );
 
   autoTable(pdf, {
     startY: 34,
-    head: [['Nº', 'Nome completo', 'Apelido', 'CPF', 'Passagens', 'Valor unitário', 'Valor total']],
-    body: state.inscricoes.map((item, index) => [
+    head: [['Nº', 'Família/Responsável', 'Vínculo', 'Nome completo', 'Apelido', 'CPF', 'Idade']],
+    body: passageiros.map((item, index) => [
       index + 1,
-      item.nome,
+      item.familiaResponsavel,
+      item.tipo || '—',
+      item.nome || '',
       item.apelido || '—',
-      formatCpf(item.cpf),
-      Number(item.quantidade),
-      dinheiro.format(VALOR_PASSAGEM),
-      dinheiro.format(Number(item.valorTotal || 0)),
+      item.cpf ? formatCpf(item.cpf) : '—',
+      item.idade ?? '—',
     ]),
-    styles: { fontSize: 8.5 },
+    styles: { fontSize: 7.8 },
   });
 
-  pdf.save('Mambucaba_2026_Inscricoes.pdf');
+  pdf.save('Mambucaba_2026_Passageiros.pdf');
 });
 
 function downloadBlob(blob, filename) {
   const url = URL.createObjectURL(blob);
   const link = document.createElement('a');
-
   link.href = url;
   link.download = filename;
   document.body.appendChild(link);
   link.click();
   link.remove();
-
   setTimeout(() => URL.revokeObjectURL(url), 1000);
 }
 
-refreshTotal();
-loadPublicList();
+renderMembers();
+loadPublicFamilies();
