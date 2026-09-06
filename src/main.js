@@ -1002,8 +1002,8 @@ async function loadPrivateFamilies() {
     alert('Não foi possível carregar as famílias e os cadastros anteriores.');
   }
 }
-function allPassengers() {
-  return state.familiasPrivadas.flatMap((familia) => {
+function allPassengers(familias = state.familiasPrivadas) {
+  return familias.flatMap((familia) => {
     const base = {
       familiaId: familia.id,
       familiaResponsavel: familia.responsavel?.nome || '',
@@ -1024,6 +1024,34 @@ function allPassengers() {
       })),
     ];
   });
+}
+
+function timestampInclusao(value) {
+  if (!value) return Number.POSITIVE_INFINITY;
+  if (typeof value.toMillis === 'function') return value.toMillis();
+  if (typeof value.toDate === 'function') return value.toDate().getTime();
+  const date = value instanceof Date ? value : new Date(value);
+  const time = date.getTime();
+  return Number.isNaN(time) ? Number.POSITIVE_INFINITY : time;
+}
+
+function familiasPorOrdemDeInclusao() {
+  return state.familiasPrivadas
+    .map((familia, index) => ({ familia, index }))
+    .sort((a, b) => {
+      const diferenca = timestampInclusao(a.familia.criadoEm) - timestampInclusao(b.familia.criadoEm);
+      return diferenca || a.index - b.index;
+    })
+    .map(({ familia }) => familia);
+}
+
+function familiasPorOrdemAlfabetica() {
+  return [...state.familiasPrivadas].sort((a, b) =>
+    upperText(a.responsavel?.nome || '').localeCompare(
+      upperText(b.responsavel?.nome || ''),
+      'pt-BR'
+    )
+  );
 }
 
 function normalizeSearch(value) {
@@ -1401,7 +1429,11 @@ function familyStripeIndexes(items) {
 }
 
 el.btnPdf.addEventListener('click', () => {
-  const passageiros = ratearPagamentosPorPassageiro();
+  // Relatório administrativo: mantém as famílias na ordem em que foram incluídas.
+  // Esta ordenação é apenas visual e não altera nenhum dado salvo no Firestore.
+  const passageiros = ratearPagamentosPorPassageiro(
+    allPassengers(familiasPorOrdemDeInclusao())
+  );
   if (!passageiros.length) {
     alert('Não há passageiros para exportar.');
     return;
@@ -1443,7 +1475,8 @@ el.btnPdf.addEventListener('click', () => {
 });
 
 el.btnPdfOnibus.addEventListener('click', () => {
-  const passageiros = allPassengers();
+  // Relatório da empresa de ônibus: famílias em ordem alfabética pelo responsável.
+  const passageiros = allPassengers(familiasPorOrdemAlfabetica());
   if (!passageiros.length) {
     alert('Não há passageiros para exportar.');
     return;
