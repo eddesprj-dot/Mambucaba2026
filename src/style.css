@@ -831,3 +831,56 @@ tr:last-child td { border-bottom: 0; }
     width: 100%;
   }
 }
+
+/* Notificações push — área do organizador */
+.notification-card {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 18px;
+  margin-bottom: 18px;
+  padding: 16px 18px;
+  border: 1px solid #343434;
+  border-radius: 16px;
+  background: #101010;
+}
+
+.notification-card h3 {
+  margin: 6px 0 4px;
+}
+
+.notification-card p {
+  margin: 0;
+  color: #bdbdbd;
+}
+
+.notification-card p[data-state="ok"] {
+  color: #d8ffd8;
+}
+
+.notification-card p[data-state="error"] {
+  color: #ffd0d0;
+}
+
+.notification-actions {
+  display: flex;
+  gap: 10px;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+}
+
+@media (max-width: 720px) {
+  .notification-card {
+    align-items: stretch;
+    flex-direction: column;
+  }
+
+  .notification-actions {
+    width: 100%;
+    justify-content: flex-start;
+  }
+
+  .notification-actions .btn {
+    width: 100%;
+  }
+}

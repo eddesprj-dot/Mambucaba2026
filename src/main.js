@@ -8,6 +8,12 @@ import {
   signOut,
 } from 'firebase/auth';
 import {
+  getMessaging,
+  getToken,
+  isSupported as isMessagingSupported,
+  onMessage,
+} from 'firebase/messaging';
+import {
   collection,
   deleteDoc,
   doc,
@@ -37,10 +43,14 @@ const firebaseConfig = {
 const ADMIN_EMAIL = 'eddesprj@gmail.com';
 const VALOR_PASSAGEM = 90;
 const LIMITE_MEMBROS = 20;
+const WORKER_NOTIFICACOES_URL = 'https://mambucaba-notificacoes.eddesprj.workers.dev';
+const VAPID_KEY = 'BHOIz_D8vz5O_TCVnpdIoni-wCPa810dMS2zVA-DJeRUEIoOPgRn2X0-srcT3C-hcZCut_rOqeEmTKCCFFSKFRU';
 
 const app = initializeApp(firebaseConfig);
 const auth = getAuth(app);
 const db = getFirestore(app);
+let messaging = null;
+let messagingReady = false;
 
 const dinheiro = new Intl.NumberFormat('pt-BR', {
   style: 'currency',
@@ -258,6 +268,18 @@ document.querySelector('#app').innerHTML = `
       </div>
 
       <div id="dashboard" class="hidden">
+        <section class="notification-card" aria-labelledby="titulo-notificacoes">
+          <div>
+            <span class="tag">AVISOS NO DISPOSITIVO</span>
+            <h3 id="titulo-notificacoes">Notificações de novas inscrições</h3>
+            <p id="notificacao-status">Verificando suporte neste dispositivo...</p>
+          </div>
+          <div class="notification-actions">
+            <button id="btn-ativar-notificacoes" class="btn btn-secondary" type="button">Ativar notificações</button>
+            <button id="btn-testar-notificacoes" class="btn btn-outline hidden" type="button">Enviar teste</button>
+          </div>
+        </section>
+
         <div class="stats">
           <article>
             <span>Famílias</span>
@@ -388,6 +410,9 @@ const el = {
   btnExcel: document.querySelector('#btn-excel'),
   btnPdf: document.querySelector('#btn-pdf'),
   btnPdfOnibus: document.querySelector('#btn-pdf-onibus'),
+  notificacaoStatus: document.querySelector('#notificacao-status'),
+  btnAtivarNotificacoes: document.querySelector('#btn-ativar-notificacoes'),
+  btnTestarNotificacoes: document.querySelector('#btn-testar-notificacoes'),
 };
 
 function digits(value) {
@@ -808,6 +833,9 @@ el.form.addEventListener('submit', async (event) => {
 
     await batch.commit();
 
+    // A inscrição já está confirmada neste ponto. O push é independente e nunca bloqueia o cadastro.
+    notifyNewFamily(familiaId);
+
     el.comprovanteDados.innerHTML = `
       <p><strong>${escapeHtml(responsavel.nome)}</strong>${responsavel.apelido ? ` <span class="nick">(${escapeHtml(responsavel.apelido)})</span>` : ''}</p>
       <p>CPF do responsável: ${maskCpf(responsavel.cpf)}</p>
@@ -912,6 +940,182 @@ function renderPublicFamilies() {
   });
 }
 
+async function prepareMessaging() {
+  if (messagingReady && messaging) return true;
+
+  if (!('Notification' in window) || !('serviceWorker' in navigator)) {
+    return false;
+  }
+
+  const supported = await isMessagingSupported().catch(() => false);
+  if (!supported) return false;
+
+  messaging = getMessaging(app);
+  messagingReady = true;
+
+  onMessage(messaging, (payload) => {
+    const title = payload?.notification?.title || 'Mambucaba 2026';
+    const body = payload?.notification?.body || 'Você recebeu uma nova notificação.';
+
+    if (Notification.permission === 'granted') {
+      try {
+        new Notification(title, {
+          body,
+          icon: '/banner-mambucaba.jpg',
+          data: { url: window.location.origin },
+        });
+      } catch (error) {
+        console.warn('Não foi possível exibir a notificação em primeiro plano:', error);
+      }
+    }
+  });
+
+  return true;
+}
+
+function setNotificationStatus(message, stateName = '') {
+  el.notificacaoStatus.textContent = message;
+  el.notificacaoStatus.dataset.state = stateName;
+}
+
+async function refreshNotificationUi() {
+  el.btnAtivarNotificacoes.classList.remove('hidden');
+  el.btnTestarNotificacoes.classList.add('hidden');
+
+  const supported = await prepareMessaging();
+  if (!supported) {
+    setNotificationStatus('Este navegador não oferece suporte às notificações push.', 'error');
+    el.btnAtivarNotificacoes.disabled = true;
+    return;
+  }
+
+  el.btnAtivarNotificacoes.disabled = false;
+
+  if (Notification.permission === 'granted') {
+    setNotificationStatus('Notificações permitidas neste dispositivo. Toque em ativar para confirmar o registro.', 'ok');
+    el.btnAtivarNotificacoes.textContent = 'Confirmar notificações';
+  } else if (Notification.permission === 'denied') {
+    setNotificationStatus('As notificações estão bloqueadas no navegador. Libere a permissão do site e tente novamente.', 'error');
+    el.btnAtivarNotificacoes.textContent = 'Notificações bloqueadas';
+    el.btnAtivarNotificacoes.disabled = true;
+  } else {
+    setNotificationStatus('Ative para receber um aviso sempre que uma nova família for inscrita.', '');
+    el.btnAtivarNotificacoes.textContent = 'Ativar notificações';
+  }
+}
+
+async function registerAdminDevice() {
+  const user = auth.currentUser;
+  if (!user) throw new Error('admin_not_authenticated');
+
+  const supported = await prepareMessaging();
+  if (!supported) throw new Error('messaging_not_supported');
+
+  const permission = await Notification.requestPermission();
+  if (permission !== 'granted') throw new Error('notification_permission_denied');
+
+  const swRegistration = await navigator.serviceWorker.register('/firebase-messaging-sw.js');
+  await navigator.serviceWorker.ready;
+
+  const token = await getToken(messaging, {
+    vapidKey: VAPID_KEY,
+    serviceWorkerRegistration: swRegistration,
+  });
+
+  if (!token) throw new Error('fcm_token_missing');
+
+  const idToken = await user.getIdToken(true);
+  const response = await fetch(`${WORKER_NOTIFICACOES_URL}/register-device`, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      Authorization: `Bearer ${idToken}`,
+    },
+    body: JSON.stringify({ token }),
+  });
+
+  const data = await response.json().catch(() => ({}));
+  if (!response.ok || !data.ok) {
+    throw new Error(data.error || 'register_device_failed');
+  }
+
+  return true;
+}
+
+async function sendTestNotification() {
+  const user = auth.currentUser;
+  if (!user) throw new Error('admin_not_authenticated');
+
+  const idToken = await user.getIdToken(true);
+  const response = await fetch(`${WORKER_NOTIFICACOES_URL}/test-notification`, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      Authorization: `Bearer ${idToken}`,
+    },
+  });
+
+  const data = await response.json().catch(() => ({}));
+  if (!response.ok || !data.ok) {
+    throw new Error(data.error || 'test_notification_failed');
+  }
+
+  return data;
+}
+
+function notifyNewFamily(familiaId) {
+  fetch(`${WORKER_NOTIFICACOES_URL}/notify-new-family`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ familiaId }),
+  }).catch((error) => {
+    console.warn('A inscrição foi salva, mas o aviso push não pôde ser enviado:', error);
+  });
+}
+
+el.btnAtivarNotificacoes.addEventListener('click', async () => {
+  el.btnAtivarNotificacoes.disabled = true;
+  setNotificationStatus('Ativando notificações neste dispositivo...');
+
+  try {
+    await registerAdminDevice();
+    setNotificationStatus('Notificações ativadas neste dispositivo.', 'ok');
+    el.btnAtivarNotificacoes.textContent = 'Notificações ativadas';
+    el.btnTestarNotificacoes.classList.remove('hidden');
+  } catch (error) {
+    console.error('Falha ao ativar notificações:', error);
+
+    if (error?.message === 'notification_permission_denied') {
+      setNotificationStatus('Permissão de notificações negada. Libere a permissão do site no navegador.', 'error');
+    } else if (error?.message === 'messaging_not_supported') {
+      setNotificationStatus('Este navegador não oferece suporte às notificações push.', 'error');
+    } else {
+      setNotificationStatus('Não foi possível ativar as notificações agora. Tente novamente.', 'error');
+    }
+
+    el.btnAtivarNotificacoes.disabled = false;
+  }
+});
+
+el.btnTestarNotificacoes.addEventListener('click', async () => {
+  el.btnTestarNotificacoes.disabled = true;
+  setNotificationStatus('Enviando notificação de teste...');
+
+  try {
+    const result = await sendTestNotification();
+    if (Number(result.sent || 0) > 0) {
+      setNotificationStatus('Teste enviado. Confira a notificação neste dispositivo.', 'ok');
+    } else {
+      setNotificationStatus('Nenhum dispositivo recebeu o teste. Ative as notificações novamente.', 'error');
+    }
+  } catch (error) {
+    console.error('Falha no teste de notificações:', error);
+    setNotificationStatus('Não foi possível enviar o teste agora.', 'error');
+  } finally {
+    el.btnTestarNotificacoes.disabled = false;
+  }
+});
+
 el.abrirAdmin.addEventListener('click', () => {
   el.adminPanel.classList.toggle('hidden');
   if (!el.adminPanel.classList.contains('hidden')) {
@@ -943,12 +1147,14 @@ onAuthStateChanged(auth, async (user) => {
     el.btnSair.classList.remove('hidden');
     el.loginMsg.textContent = '';
     await loadPrivateFamilies();
+    await refreshNotificationUi();
   } else {
     state.familiasPrivadas = [];
     state.pagamentos = [];
     el.loginBox.classList.remove('hidden');
     el.dashboard.classList.add('hidden');
     el.btnSair.classList.add('hidden');
+    el.btnTestarNotificacoes.classList.add('hidden');
   }
 });
 
