@@ -884,3 +884,74 @@ tr:last-child td { border-bottom: 0; }
     width: 100%;
   }
 }
+
+/* Atualização de cadastro pelos participantes */
+.update-entry-card .card-head,
+.update-admin-box .members-head {
+  align-items: flex-start;
+}
+
+.update-entry-card p,
+.update-admin-box p {
+  margin: 6px 0 0;
+}
+
+#modo-atualizacao-aviso {
+  margin-bottom: 18px;
+  border: 1px solid #4a4a4a;
+  border-radius: 12px;
+  padding: 14px;
+}
+
+#modo-atualizacao-aviso .row-action {
+  margin-left: 10px;
+}
+
+.update-admin-box {
+  margin: 18px 0 22px;
+  padding: 16px;
+  border: 1px solid #343434;
+  border-radius: 16px;
+  background: #101010;
+}
+
+.update-request-card {
+  margin-top: 14px;
+}
+
+.update-request-card .table-wrap {
+  margin-top: 12px;
+}
+
+#total-atualizacoes-pendentes {
+  display: inline-flex;
+  min-width: 28px;
+  height: 28px;
+  align-items: center;
+  justify-content: center;
+  margin-left: 6px;
+  padding: 0 8px;
+  border-radius: 999px;
+  background: #f3f3f3;
+  color: #111;
+  font-size: 0.9rem;
+}
+
+@media (max-width: 720px) {
+  .update-entry-card .card-head {
+    align-items: stretch;
+    flex-direction: column;
+  }
+
+  .update-entry-card .btn,
+  #modo-atualizacao-aviso .row-action {
+    width: 100%;
+    margin: 10px 0 0;
+  }
+}
+
+.age-confirm-warning {
+  display: block;
+  margin-top: 6px;
+  font-weight: 800;
+}

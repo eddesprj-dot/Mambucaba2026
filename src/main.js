@@ -17,6 +17,7 @@ import {
   collection,
   deleteDoc,
   doc,
+  getDoc,
   getDocs,
   getFirestore,
   orderBy,
@@ -64,6 +65,11 @@ const state = {
   pagamentos: [],
   filtro: '',
   edicaoFamilia: null,
+  solicitacoesAtualizacao: [],
+  pedidosAcessoAtualizacao: [],
+  modoFormulario: 'novo',
+  familiaAtualizacaoId: null,
+  acessoAtualizacaoId: null,
 };
 
 document.querySelector('#app').innerHTML = `
@@ -78,17 +84,22 @@ document.querySelector('#app').innerHTML = `
         <span class="tag">INSCRIÇÃO DE PASSAGENS</span>
         <h1>Mambucaba 2026</h1>
         <p class="hero-date"><strong>28/11/2026</strong> • Vila Histórica de Mambucaba</p>
-        <p class="hero-price">Valor: <strong>R$ 90,00 por passageiro pagante</strong> • crianças de 0 a 3 anos não pagam</p>
+        <p class="hero-price">Valor: <strong>R$ 90,00 por passageiro pagante</strong> • crianças de 0 a 5 anos não pagam (até 5 anos e 11 meses). Para filho(a) sem idade informada, a passagem será cobrada normalmente.</p>
       </div>
     </section>
 
     <section class="card">
       <div class="card-head">
         <div>
-          <span class="tag">CADASTRO POR FAMÍLIA</span>
-          <h2>Responsável pela família</h2>
+          <span id="form-tag" class="tag">CADASTRO POR FAMÍLIA</span>
+          <h2 id="form-title">Responsável pela família</h2>
         </div>
         <span class="price-badge">R$ 90,00 / pagante</span>
+      </div>
+
+      <div id="modo-atualizacao-aviso" class="privacy hidden">
+        <strong>ATUALIZAÇÃO DE CADASTRO:</strong> os dados atuais da sua família foram carregados. Confira, complete ou corrija somente o que for necessário e clique em “Salvar atualização”.
+        <button id="cancelar-atualizacao" class="row-action" type="button">Cancelar atualização</button>
       </div>
 
       <form id="form-familia" novalidate>
@@ -123,6 +134,29 @@ document.querySelector('#app').innerHTML = `
               maxlength="14"
               autocomplete="off"
               placeholder="000.000.000-00"
+              required
+            />
+          </label>
+
+          <label>
+            Identidade
+            <input
+              id="responsavel-identidade"
+              maxlength="30"
+              autocomplete="off"
+              placeholder="RG ou número do CPF"
+              required
+            />
+            <small>Pode ser informado o mesmo número do CPF.</small>
+          </label>
+
+          <label>
+            Órgão emissor
+            <input
+              id="responsavel-orgao-emissor"
+              maxlength="40"
+              autocomplete="off"
+              placeholder="Ex.: DETRAN/RJ"
               required
             />
           </label>
@@ -176,10 +210,22 @@ document.querySelector('#app').innerHTML = `
       </form>
 
       <div class="privacy">
-        <strong>Privacidade:</strong> CPF, nome completo e idade dos filhos não aparecem publicamente.
+        <strong>Privacidade:</strong> CPF, identidade, órgão emissor, certidão de nascimento, nome completo e idade dos filhos não aparecem publicamente.
         Na lista pública será exibido somente o primeiro nome + primeiro sobrenome do responsável,
         com apelido entre parênteses quando informado, e o total de passageiros da família.
       </div>
+    </section>
+
+    <section class="card update-entry-card">
+      <div class="card-head">
+        <div>
+          <span class="tag">JÁ ESTÁ CADASTRADO?</span>
+          <h2>Atualize os dados da sua família</h2>
+          <p>Informe o CPF do responsável já cadastrado. O sistema abrirá o responsável e todos os membros da família exatamente como estão salvos para você completar ou corrigir somente o que for necessário.</p>
+        </div>
+        <button id="iniciar-atualizacao" class="btn btn-secondary" type="button">Atualizar meu cadastro</button>
+      </div>
+      <p class="privacy"><strong>Atualização:</strong> use o CPF do responsável informado no cadastro original. Depois de abrir a família, revise os dados antes de salvar.</p>
     </section>
 
     <section id="comprovante" class="card success-card hidden">
@@ -364,12 +410,19 @@ const el = {
   responsavelNome: document.querySelector('#responsavel-nome'),
   responsavelApelido: document.querySelector('#responsavel-apelido'),
   responsavelCpf: document.querySelector('#responsavel-cpf'),
+  responsavelIdentidade: document.querySelector('#responsavel-identidade'),
+  responsavelOrgaoEmissor: document.querySelector('#responsavel-orgao-emissor'),
   membrosContainer: document.querySelector('#membros-container'),
   semMembros: document.querySelector('#sem-membros'),
   btnAdicionarMembro: document.querySelector('#btn-adicionar-membro'),
   dialogTipo: document.querySelector('#dialog-tipo'),
   dialogEditarFamilia: document.querySelector('#dialog-editar-familia'),
   formEditarFamilia: document.querySelector('#form-editar-familia'),
+  formTag: document.querySelector('#form-tag'),
+  formTitle: document.querySelector('#form-title'),
+  modoAtualizacaoAviso: document.querySelector('#modo-atualizacao-aviso'),
+  iniciarAtualizacao: document.querySelector('#iniciar-atualizacao'),
+  cancelarAtualizacao: document.querySelector('#cancelar-atualizacao'),
   conteudoEdicaoFamilia: document.querySelector('#conteudo-edicao-familia'),
   msgEdicaoFamilia: document.querySelector('#msg-edicao-familia'),
   btnFecharEdicao: document.querySelector('#btn-fechar-edicao'),
@@ -401,6 +454,12 @@ const el = {
   busca: document.querySelector('#busca'),
   familiasAdmin: document.querySelector('#familias-admin'),
   adminVazio: document.querySelector('#admin-vazio'),
+  pedidosAcessoAdmin: document.querySelector('#pedidos-acesso-admin'),
+  semPedidosAcesso: document.querySelector('#sem-pedidos-acesso'),
+  totalPedidosAcesso: document.querySelector('#total-pedidos-acesso'),
+  solicitacoesAtualizacaoAdmin: document.querySelector('#solicitacoes-atualizacao-admin'),
+  semSolicitacoesAtualizacao: document.querySelector('#sem-solicitacoes-atualizacao'),
+  totalAtualizacoesPendentes: document.querySelector('#total-atualizacoes-pendentes'),
   statFamilias: document.querySelector('#stat-familias'),
   statPassageiros: document.querySelector('#stat-passageiros'),
   statPassagens: document.querySelector('#stat-passagens'),
@@ -542,10 +601,19 @@ function totalPessoas() {
 }
 
 function criancaCortesia(passageiro) {
+  const idadeInformada = passageiro?.idade !== null
+    && passageiro?.idade !== undefined
+    && passageiro?.idade !== '';
+
+  const idade = Number(passageiro?.idade);
+  const zeroAntigoNaoConfirmado = idade === 0 && passageiro?.idadeConfirmada !== true;
+
   return passageiro?.tipo === 'FILHO(A)'
-    && Number.isInteger(Number(passageiro.idade))
-    && Number(passageiro.idade) >= 0
-    && Number(passageiro.idade) <= 3;
+    && idadeInformada
+    && Number.isInteger(idade)
+    && idade >= 0
+    && idade <= 5
+    && !zeroAntigoNaoConfirmado;
 }
 
 function totalPassagensPagas(membros = state.membros) {
@@ -600,6 +668,8 @@ function refreshSummary() {
 function memberTemplate(member) {
   const isChild = member.tipo === 'FILHO(A)';
   const cpfObrigatorio = !isChild;
+  const identidadeObrigatoria = !isChild;
+  const orgaoObrigatorio = !isChild;
 
   return `
     <article class="member-card" data-id="${member.id}">
@@ -634,7 +704,7 @@ function memberTemplate(member) {
         </label>
 
         <label>
-          CPF ${isChild ? '<span class="optional">(opcional)</span>' : ''}
+          CPF ${isChild ? '<span class="optional">(conforme idade)</span>' : ''}
           <input
             data-field="cpf"
             value="${escapeHtml(formatCpf(member.cpf))}"
@@ -645,20 +715,54 @@ function memberTemplate(member) {
           />
         </label>
 
+        <label>
+          Identidade ${isChild ? '<span class="optional">(conforme idade)</span>' : ''}
+          <input
+            data-field="identidade"
+            value="${escapeHtml(member.identidade || '')}"
+            maxlength="30"
+            placeholder="RG ou número do CPF"
+            ${identidadeObrigatoria ? 'required' : ''}
+          />
+          <small>Pode ser informado o mesmo número do CPF.</small>
+        </label>
+
+        <label>
+          Órgão emissor ${isChild ? '<span class="optional">(se informar identidade)</span>' : ''}
+          <input
+            data-field="orgaoEmissor"
+            value="${escapeHtml(member.orgaoEmissor || '')}"
+            maxlength="40"
+            placeholder="Ex.: DETRAN/RJ"
+            ${orgaoObrigatorio ? 'required' : ''}
+          />
+        </label>
+
         ${isChild ? `
           <label>
-            Idade
+            Idade <span class="optional">(opcional)</span>
             <input
               data-field="idade"
               value="${member.idade ?? ''}"
               inputmode="numeric"
               type="number"
               min="0"
-              max="17"
-              placeholder="Idade"
-              required
+              step="1"
+              placeholder="Idade (opcional)"
             />
-            <small>De 0 a 3 anos: cortesia, sem cobrança de passagem.</small>
+            <small>0 a 5 anos: cortesia. A partir de 6 anos: R$ 90,00. Sem idade informada: R$ 90,00.</small>
+            ${Number(member.idade) === 0 && member.idadeConfirmada !== true ? '<small class="age-confirm-warning">⚠ Este cadastro antigo está com idade 0. Confirme se realmente é menor de 1 ano, corrija a idade ou deixe o campo vazio.</small>' : ''}
+          </label>
+
+          <label class="field-wide">
+            Nº da Certidão de Nascimento <span class="optional">(obrigatória de 0 a 11 anos)</span>
+            <input
+              data-field="certidaoNascimento"
+              value="${escapeHtml(member.certidaoNascimento || '')}"
+              maxlength="50"
+              placeholder="Número da certidão de nascimento"
+            />
+            <small>0 a 11 anos: certidão obrigatória. 12 a 17 anos: CPF ou identidade. Sem idade informada: CPF, identidade e órgão emissor obrigatórios.</small>
           </label>
         ` : ''}
       </div>
@@ -689,6 +793,9 @@ el.dialogTipo.addEventListener('close', () => {
     nome: '',
     apelido: '',
     cpf: '',
+    identidade: '',
+    orgaoEmissor: '',
+    certidaoNascimento: '',
     idade: null,
   });
 
@@ -734,6 +841,9 @@ function validateFamily() {
     nome: upperText(el.responsavelNome.value),
     apelido: upperText(el.responsavelApelido.value),
     cpf: digits(el.responsavelCpf.value),
+    identidade: upperText(el.responsavelIdentidade.value),
+    orgaoEmissor: upperText(el.responsavelOrgaoEmissor.value),
+    certidaoNascimento: '',
     idade: null,
   };
 
@@ -745,6 +855,14 @@ function validateFamily() {
     return { error: 'Informe um CPF válido para o responsável.' };
   }
 
+  if (!responsavel.identidade) {
+    return { error: 'Informe o número da identidade do responsável.' };
+  }
+
+  if (!responsavel.orgaoEmissor) {
+    return { error: 'Informe o órgão emissor da identidade do responsável.' };
+  }
+
   const membros = [];
 
   for (const item of state.membros) {
@@ -753,7 +871,15 @@ function validateFamily() {
       nome: upperText(item.nome),
       apelido: upperText(item.apelido),
       cpf: digits(item.cpf),
-      idade: item.tipo === 'FILHO(A)' ? Number(item.idade) : null,
+      identidade: upperText(item.identidade),
+      orgaoEmissor: upperText(item.orgaoEmissor),
+      certidaoNascimento: upperText(item.certidaoNascimento),
+      idade: item.tipo === 'FILHO(A)'
+        ? (item.idade === null || item.idade === undefined || item.idade === '' ? null : Number(item.idade))
+        : null,
+      idadeConfirmada: item.tipo === 'FILHO(A)'
+        ? !(item.idade === null || item.idade === undefined || item.idade === '')
+        : false,
     };
 
     if (!fullNameIsValid(membro.nome)) {
@@ -761,15 +887,42 @@ function validateFamily() {
     }
 
     if (membro.tipo === 'FILHO(A)') {
-      if (!Number.isInteger(membro.idade) || membro.idade < 0 || membro.idade > 17) {
-        return { error: `Informe uma idade válida (0 a 17 anos) para ${membro.nome}.` };
+      const idadeInformada = membro.idade !== null;
+
+      if (idadeInformada && (!Number.isInteger(membro.idade) || membro.idade < 0)) {
+        return { error: `Informe uma idade válida para ${membro.nome}.` };
       }
       if (membro.cpf && !cpfIsValid(membro.cpf)) {
         return { error: `O CPF informado para ${membro.nome} não é válido.` };
       }
+      if (membro.identidade && !membro.orgaoEmissor) {
+        return { error: `Informe o órgão emissor da identidade de ${membro.nome}.` };
+      }
+
+      if (!idadeInformada) {
+        if (!cpfIsValid(membro.cpf)) {
+          return { error: `Sem informar a idade de ${membro.nome}, o CPF é obrigatório.` };
+        }
+        if (!membro.identidade) {
+          return { error: `Sem informar a idade de ${membro.nome}, a identidade é obrigatória.` };
+        }
+        if (!membro.orgaoEmissor) {
+          return { error: `Sem informar a idade de ${membro.nome}, o órgão emissor é obrigatório.` };
+        }
+      } else if (membro.idade <= 11 && !membro.certidaoNascimento) {
+        return { error: `Informe o número da Certidão de Nascimento de ${membro.nome}.` };
+      } else if (membro.idade >= 12 && membro.idade <= 17 && !membro.cpf && !membro.identidade) {
+        return { error: `Para ${membro.nome}, de 12 a 17 anos, informe CPF ou identidade.` };
+      }
     } else {
       if (!cpfIsValid(membro.cpf)) {
         return { error: `Informe um CPF válido para ${membro.nome}.` };
+      }
+      if (!membro.identidade) {
+        return { error: `Informe o número da identidade de ${membro.nome}.` };
+      }
+      if (!membro.orgaoEmissor) {
+        return { error: `Informe o órgão emissor da identidade de ${membro.nome}.` };
       }
     }
 
@@ -783,6 +936,161 @@ function validateFamily() {
 
   return { responsavel, membros };
 }
+
+
+function resetFormularioFamilia() {
+  el.form.reset();
+  state.membros = [];
+  renderMembers();
+}
+
+function encerrarModoAtualizacao({ limpar = true } = {}) {
+  state.modoFormulario = 'novo';
+  state.familiaAtualizacaoId = null;
+  state.acessoAtualizacaoId = null;
+  el.formTag.textContent = 'CADASTRO POR FAMÍLIA';
+  el.formTitle.textContent = 'Responsável pela família';
+  el.modoAtualizacaoAviso.classList.add('hidden');
+  el.responsavelCpf.readOnly = false;
+  el.btnEnviar.textContent = 'Confirmar inscrição da família';
+  if (limpar) resetFormularioFamilia();
+}
+
+function normalizarMembroParaAtualizacao(membro = {}) {
+  const isChild = membro.tipo === 'FILHO(A)';
+  const idadeVazia = membro.idade === null || membro.idade === undefined || membro.idade === '';
+  const idade = idadeVazia ? null : Number(membro.idade);
+  return {
+    id: makeId(),
+    tipo: membro.tipo || 'OUTRO MEMBRO',
+    nome: membro.nome || '',
+    apelido: membro.apelido || '',
+    cpf: digits(membro.cpf || ''),
+    identidade: membro.identidade || '',
+    orgaoEmissor: membro.orgaoEmissor || '',
+    certidaoNascimento: membro.certidaoNascimento || '',
+    idade: isChild ? idade : null,
+    // Cadastros antigos com idade 0 precisam ser confirmados pelo participante.
+    idadeConfirmada: isChild
+      ? (idade === 0 ? membro.idadeConfirmada === true : !idadeVazia)
+      : false,
+  };
+}
+
+function iniciarModoAtualizacaoPreenchida(familiaId, acessoId, familia) {
+  state.modoFormulario = 'atualizacao';
+  state.familiaAtualizacaoId = familiaId;
+  state.acessoAtualizacaoId = null;
+  resetFormularioFamilia();
+
+  const responsavel = familia?.responsavel || {};
+  el.responsavelNome.value = responsavel.nome || '';
+  el.responsavelApelido.value = responsavel.apelido || '';
+  el.responsavelCpf.value = formatCpf(familiaId);
+  el.responsavelIdentidade.value = responsavel.identidade || '';
+  el.responsavelOrgaoEmissor.value = responsavel.orgaoEmissor || '';
+  el.responsavelCpf.readOnly = true;
+
+  state.membros = Array.isArray(familia?.membros)
+    ? familia.membros.map(normalizarMembroParaAtualizacao)
+    : [];
+  renderMembers();
+
+  el.formTag.textContent = 'ATUALIZAÇÃO DE CADASTRO';
+  el.formTitle.textContent = 'Confira e complete os dados da sua família';
+  el.modoAtualizacaoAviso.classList.remove('hidden');
+  el.btnEnviar.textContent = 'Salvar atualização';
+  el.form.scrollIntoView({ behavior: 'smooth', block: 'start' });
+}
+
+async function carregarCadastroDireto(cpf) {
+  const familiaSnap = await getDoc(doc(db, 'familias', cpf));
+  if (!familiaSnap.exists()) {
+    throw new Error('familia_nao_encontrada');
+  }
+
+  iniciarModoAtualizacaoPreenchida(cpf, null, familiaSnap.data());
+}
+
+el.iniciarAtualizacao.addEventListener('click', async () => {
+  const informado = prompt('Informe o CPF do responsável já cadastrado:');
+  if (informado === null) return;
+
+  const cpf = digits(informado);
+  if (!cpfIsValid(cpf)) {
+    alert('Informe um CPF válido do responsável.');
+    return;
+  }
+
+  el.iniciarAtualizacao.disabled = true;
+  const textoOriginal = el.iniciarAtualizacao.textContent;
+  el.iniciarAtualizacao.textContent = 'Carregando cadastro...';
+
+  try {
+    await carregarCadastroDireto(cpf);
+  } catch (error) {
+    console.error(error);
+    if (error?.message === 'familia_nao_encontrada') {
+      alert('Não foi localizado cadastro de família para este CPF. Confira o número ou procure o organizador.');
+    } else if (error?.code === 'permission-denied') {
+      alert('O acesso ao cadastro foi bloqueado pelas regras do Firestore. Publique as novas regras e tente novamente.');
+    } else {
+      alert('Não foi possível carregar o cadastro agora. Tente novamente.');
+    }
+  } finally {
+    el.iniciarAtualizacao.disabled = false;
+    el.iniciarAtualizacao.textContent = textoOriginal;
+  }
+});
+
+async function salvarAtualizacaoDireta(responsavel, membros) {
+  const familiaId = state.familiaAtualizacaoId;
+  if (!familiaId || responsavel.cpf !== familiaId) {
+    throw new Error('familia_atualizacao_invalida');
+  }
+
+  const [familiaAtualSnap, publicoAtualSnap] = await Promise.all([
+    getDoc(doc(db, 'familias', familiaId)),
+    getDoc(doc(db, 'familiasPublicas', familiaId)),
+  ]);
+
+  if (!familiaAtualSnap.exists()) {
+    throw new Error('familia_nao_encontrada');
+  }
+
+  const familiaAtual = familiaAtualSnap.data();
+  const publicoAtual = publicoAtualSnap.exists() ? publicoAtualSnap.data() : {};
+  const pessoas = 1 + membros.length;
+  const passagensPagas = totalPassagensPagas(membros);
+  const valorTotal = passagensPagas * VALOR_PASSAGEM;
+  const criadoEmOriginal = familiaAtual.criadoEm || publicoAtual.criadoEm || serverTimestamp();
+  const valorPagoAtual = Number(publicoAtual.valorPago || 0);
+  const batch = writeBatch(db);
+
+  batch.set(doc(db, 'familias', familiaId), {
+    responsavel,
+    membros,
+    totalPessoas: pessoas,
+    totalPassagens: passagensPagas,
+    valorUnitario: VALOR_PASSAGEM,
+    valorTotal,
+    criadoEm: criadoEmOriginal,
+  });
+
+  batch.set(doc(db, 'familiasPublicas', familiaId), {
+    nomePublico: publicName(responsavel.nome, responsavel.apelido),
+    totalPessoas: pessoas,
+    totalPassagens: passagensPagas,
+    valorPago: valorPagoAtual,
+    criadoEm: criadoEmOriginal,
+  });
+
+  await batch.commit();
+}
+
+el.cancelarAtualizacao.addEventListener('click', () => {
+  encerrarModoAtualizacao();
+});
 
 el.form.addEventListener('submit', async (event) => {
   event.preventDefault();
@@ -800,6 +1108,40 @@ el.form.addEventListener('submit', async (event) => {
   }
 
   const { responsavel, membros } = result;
+
+  if (state.modoFormulario === 'atualizacao') {
+    if (!confirm('Salvar agora as alterações deste cadastro? Confira os dados antes de continuar.')) {
+      return;
+    }
+
+    el.btnEnviar.disabled = true;
+    el.btnEnviar.textContent = 'Salvando atualização...';
+    try {
+      await salvarAtualizacaoDireta(responsavel, membros);
+      el.formMsg.textContent = 'Cadastro atualizado com sucesso.';
+      encerrarModoAtualizacao({ limpar: true });
+      await loadPublicFamilies();
+      alert('Cadastro atualizado e salvo com sucesso.');
+    } catch (error) {
+      console.error(error);
+      if (error?.message === 'familia_nao_encontrada') {
+        el.formMsg.textContent = 'A família não foi localizada. Nenhum dado foi alterado.';
+      } else if (error?.code === 'permission-denied') {
+        el.formMsg.textContent = 'A atualização foi bloqueada pelas regras do Firestore. Publique as novas regras e tente novamente.';
+      } else {
+        el.formMsg.textContent = 'Não foi possível salvar a atualização agora. Nenhum dado foi alterado.';
+      }
+    } finally {
+      el.btnEnviar.disabled = false;
+      if (state.modoFormulario === 'atualizacao') {
+        el.btnEnviar.textContent = 'Salvar atualização';
+      } else {
+        el.btnEnviar.textContent = 'Confirmar inscrição da família';
+      }
+    }
+    return;
+  }
+
   const familiaId = responsavel.cpf;
   const pessoas = 1 + membros.length;
   const passagensPagas = totalPassagensPagas(membros);
@@ -840,14 +1182,12 @@ el.form.addEventListener('submit', async (event) => {
       <p><strong>${escapeHtml(responsavel.nome)}</strong>${responsavel.apelido ? ` <span class="nick">(${escapeHtml(responsavel.apelido)})</span>` : ''}</p>
       <p>CPF do responsável: ${maskCpf(responsavel.cpf)}</p>
       <p>${pessoas} ${pessoas === 1 ? 'passageiro' : 'passageiros'} • ${passagensPagas} ${passagensPagas === 1 ? 'passagem paga' : 'passagens pagas'} • <strong>${dinheiro.format(valorTotal)}</strong></p>
-      ${cortesias > 0 ? `<p><strong>${cortesias} ${cortesias === 1 ? 'criança de 0 a 3 anos em cortesia' : 'crianças de 0 a 3 anos em cortesia'}.</strong></p>` : ''}
+      ${cortesias > 0 ? `<p><strong>${cortesias} ${cortesias === 1 ? 'criança de 0 a 5 anos em cortesia' : 'crianças de 0 a 5 anos em cortesia'}.</strong></p>` : ''}
       <p>Mambucaba • 28/11/2026</p>
     `;
 
     el.comprovante.classList.remove('hidden');
-    el.form.reset();
-    state.membros = [];
-    renderMembers();
+    resetFormularioFamilia();
     el.formMsg.textContent = 'Cadastro da família realizado com sucesso.';
     el.comprovante.scrollIntoView({ behavior: 'smooth', block: 'center' });
 
@@ -1151,6 +1491,8 @@ onAuthStateChanged(auth, async (user) => {
   } else {
     state.familiasPrivadas = [];
     state.pagamentos = [];
+    state.solicitacoesAtualizacao = [];
+    state.pedidosAcessoAtualizacao = [];
     el.loginBox.classList.remove('hidden');
     el.dashboard.classList.add('hidden');
     el.btnSair.classList.add('hidden');
@@ -1188,11 +1530,22 @@ async function loadPrivateFamilies() {
       ...snap.data(),
     }));
 
-    const familiasNovas = familiasSnap.docs.map((snap) => ({
-      id: snap.id,
-      legacy: false,
-      ...snap.data(),
-    }));
+    const familiasNovas = familiasSnap.docs.map((snap) => {
+      const data = snap.data();
+      const membros = Array.isArray(data.membros) ? data.membros : [];
+      const totalPessoasAtual = 1 + membros.length;
+      const totalPassagensAtual = totalPassagensPagas(membros);
+      return {
+        id: snap.id,
+        legacy: false,
+        ...data,
+        membros,
+        totalPessoas: totalPessoasAtual,
+        totalPassagens: totalPassagensAtual,
+        valorUnitario: VALOR_PASSAGEM,
+        valorTotal: totalPassagensAtual * VALOR_PASSAGEM,
+      };
+    });
 
     const idsNovos = new Set(familiasNovas.map((item) => item.id));
 
@@ -1208,6 +1561,9 @@ async function loadPrivateFamilies() {
             nome: upperText(data.nome || ''),
             apelido: upperText(data.apelido || ''),
             cpf: data.cpf || snap.id,
+            identidade: data.identidade || '',
+            orgaoEmissor: data.orgaoEmissor || '',
+            certidaoNascimento: '',
             idade: null,
           },
           membros: [],
@@ -1248,6 +1604,9 @@ function allPassengers(familias = state.familiasPrivadas) {
         nome: familia.responsavel?.nome || '',
         apelido: familia.responsavel?.apelido || '',
         cpf: familia.responsavel?.cpf || '',
+        identidade: familia.responsavel?.identidade || '',
+        orgaoEmissor: familia.responsavel?.orgaoEmissor || '',
+        certidaoNascimento: familia.responsavel?.certidaoNascimento || '',
         idade: null,
       },
       ...(familia.membros || []).map((membro) => ({
@@ -1303,7 +1662,9 @@ function filteredFamilies() {
       familia.responsavel?.nome,
       familia.responsavel?.apelido,
       familia.responsavel?.cpf,
-      ...(familia.membros || []).flatMap((m) => [m.nome, m.apelido, m.cpf, m.tipo]),
+      familia.responsavel?.identidade,
+      familia.responsavel?.orgaoEmissor,
+      ...(familia.membros || []).flatMap((m) => [m.nome, m.apelido, m.cpf, m.identidade, m.orgaoEmissor, m.certidaoNascimento, m.tipo]),
     ]
       .map((value) => normalizeSearch(value))
       .join(' ');
@@ -1399,7 +1760,7 @@ function renderAdminFamilies() {
                 <td data-label="Nome">${escapeHtml(upperText(p.nome || ''))}</td>
                 <td data-label="Apelido">${p.apelido ? escapeHtml(upperText(p.apelido)) : '—'}</td>
                 <td data-label="CPF">${p.cpf ? formatCpf(p.cpf) : '—'}</td>
-                <td data-label="Idade">${p.idade ?? '—'}</td>
+                <td data-label="Idade">${p.tipo === 'FILHO(A)' && Number(p.idade) === 0 && p.idadeConfirmada !== true ? '0 — A CONFIRMAR' : (p.idade ?? '—')}</td>
               </tr>
             `).join('')}
           </tbody>
@@ -1480,6 +1841,12 @@ function renderEditFamilyDialog() {
           <label>CPF
             <input name="responsavelCpf" inputmode="numeric" maxlength="14" value="${formatCpf(edicao.responsavel.cpf || '')}" required />
           </label>
+          <label>Identidade
+            <input name="responsavelIdentidade" maxlength="30" value="${escapeHtml(edicao.responsavel.identidade || '')}" placeholder="RG ou número do CPF" required />
+          </label>
+          <label>Órgão emissor
+            <input name="responsavelOrgaoEmissor" maxlength="40" value="${escapeHtml(edicao.responsavel.orgaoEmissor || '')}" placeholder="Ex.: DETRAN/RJ" required />
+          </label>
           <label>Quantidade de passagens
             <input name="legacyQuantidade" type="number" min="1" max="20" step="1" value="${Number(edicao.totalPassagens || 1)}" required />
           </label>
@@ -1502,6 +1869,12 @@ function renderEditFamilyDialog() {
         </label>
         <label>CPF
           <input name="responsavelCpf" inputmode="numeric" maxlength="14" value="${formatCpf(edicao.responsavel.cpf || '')}" required />
+        </label>
+        <label>Identidade
+          <input name="responsavelIdentidade" maxlength="30" value="${escapeHtml(edicao.responsavel.identidade || '')}" placeholder="RG ou número do CPF" required />
+        </label>
+        <label>Órgão emissor
+          <input name="responsavelOrgaoEmissor" maxlength="40" value="${escapeHtml(edicao.responsavel.orgaoEmissor || '')}" placeholder="Ex.: DETRAN/RJ" required />
         </label>
       </div>
     </div>
@@ -1531,12 +1904,22 @@ function renderEditFamilyDialog() {
                 <input name="apelido-${index}" maxlength="40" value="${escapeHtml(membro.apelido || '')}" />
               </label>
               <label>CPF
-                <input name="cpf-${index}" inputmode="numeric" maxlength="14" value="${membro.cpf ? formatCpf(membro.cpf) : ''}" placeholder="${membro.tipo === 'FILHO(A)' ? 'Opcional para filho(a)' : '000.000.000-00'}" />
+                <input name="cpf-${index}" inputmode="numeric" maxlength="14" value="${membro.cpf ? formatCpf(membro.cpf) : ''}" placeholder="${membro.tipo === 'FILHO(A)' ? 'Conforme idade' : '000.000.000-00'}" />
+              </label>
+              <label>Identidade
+                <input name="identidade-${index}" maxlength="30" value="${escapeHtml(membro.identidade || '')}" placeholder="RG ou número do CPF" />
+              </label>
+              <label>Órgão emissor
+                <input name="orgaoEmissor-${index}" maxlength="40" value="${escapeHtml(membro.orgaoEmissor || '')}" placeholder="Ex.: DETRAN/RJ" />
               </label>
               <label>Idade
-                <input name="idade-${index}" type="number" min="0" max="17" step="1" value="${membro.tipo === 'FILHO(A)' && membro.idade != null ? membro.idade : ''}" placeholder="Somente filho(a)" ${membro.tipo === 'FILHO(A)' ? '' : 'disabled'} />
+                <input name="idade-${index}" type="number" min="0" step="1" value="${membro.tipo === 'FILHO(A)' && membro.idade != null ? membro.idade : ''}" placeholder="Opcional para filho(a)" ${membro.tipo === 'FILHO(A)' ? '' : 'disabled'} />
+              </label>
+              <label class="field-wide">Nº da Certidão de Nascimento
+                <input name="certidaoNascimento-${index}" maxlength="50" value="${escapeHtml(membro.certidaoNascimento || '')}" placeholder="Obrigatória para filho(a) de 0 a 11 anos" />
               </label>
             </div>
+            ${membro.tipo === 'FILHO(A)' ? '<p class="edit-note">Idade opcional. 0 a 5 anos: cortesia; 6 anos ou mais: R$ 90,00. Sem idade: R$ 90,00 e CPF + identidade + órgão emissor obrigatórios. 0 a 11 anos com idade informada: certidão obrigatória. 12 a 17: CPF ou identidade.</p>' : ''}
           </article>
         `).join('') : '<p class="members-empty">Nenhum outro membro nesta família.</p>'}
       </div>
@@ -1588,6 +1971,8 @@ function sincronizarEdicaoDoFormulario() {
   if (form.elements.responsavelNome) edicao.responsavel.nome = upperText(form.elements.responsavelNome.value);
   if (form.elements.responsavelApelido) edicao.responsavel.apelido = upperText(form.elements.responsavelApelido.value);
   if (form.elements.responsavelCpf) edicao.responsavel.cpf = digits(form.elements.responsavelCpf.value);
+  if (form.elements.responsavelIdentidade) edicao.responsavel.identidade = upperText(form.elements.responsavelIdentidade.value);
+  if (form.elements.responsavelOrgaoEmissor) edicao.responsavel.orgaoEmissor = upperText(form.elements.responsavelOrgaoEmissor.value);
   if (edicao.legacy && form.elements.legacyQuantidade) {
     edicao.totalPassagens = Number(form.elements.legacyQuantidade.value || edicao.totalPassagens || 1);
   }
@@ -1598,9 +1983,12 @@ function sincronizarEdicaoDoFormulario() {
       membro.nome = upperText(form.elements[`nome-${index}`]?.value || '');
       membro.apelido = upperText(form.elements[`apelido-${index}`]?.value || '');
       membro.cpf = digits(form.elements[`cpf-${index}`]?.value || '');
+      membro.identidade = upperText(form.elements[`identidade-${index}`]?.value || '');
+      membro.orgaoEmissor = upperText(form.elements[`orgaoEmissor-${index}`]?.value || '');
+      membro.certidaoNascimento = membro.tipo === 'FILHO(A)' ? upperText(form.elements[`certidaoNascimento-${index}`]?.value || '') : '';
       const idadeRaw = form.elements[`idade-${index}`]?.value ?? '';
       membro.idade = membro.tipo === 'FILHO(A)'
-        ? (idadeRaw === '' ? Number.NaN : Number(idadeRaw))
+        ? (idadeRaw === '' ? null : Number(idadeRaw))
         : null;
     });
   }
@@ -1616,11 +2004,16 @@ function lerFormularioEdicao() {
     nome: upperText(form.elements.responsavelNome?.value || ''),
     apelido: upperText(form.elements.responsavelApelido?.value || ''),
     cpf: digits(form.elements.responsavelCpf?.value || ''),
+    identidade: upperText(form.elements.responsavelIdentidade?.value || ''),
+    orgaoEmissor: upperText(form.elements.responsavelOrgaoEmissor?.value || ''),
+    certidaoNascimento: '',
     idade: null,
   };
 
   if (!fullNameIsValid(responsavel.nome)) return { error: 'Informe o nome completo do responsável.' };
   if (!cpfIsValid(responsavel.cpf)) return { error: 'Informe um CPF válido para o responsável.' };
+  if (!responsavel.identidade) return { error: 'Informe o número da identidade do responsável.' };
+  if (!responsavel.orgaoEmissor) return { error: 'Informe o órgão emissor da identidade do responsável.' };
 
   if (edicao.legacy) {
     const quantidade = Number(form.elements.legacyQuantidade?.value || 1);
@@ -1641,9 +2034,15 @@ function lerFormularioEdicao() {
       nome: upperText(form.elements[`nome-${index}`]?.value || ''),
       apelido: upperText(form.elements[`apelido-${index}`]?.value || ''),
       cpf: digits(form.elements[`cpf-${index}`]?.value || ''),
+      identidade: upperText(form.elements[`identidade-${index}`]?.value || ''),
+      orgaoEmissor: upperText(form.elements[`orgaoEmissor-${index}`]?.value || ''),
+      certidaoNascimento: tipo === 'FILHO(A)' ? upperText(form.elements[`certidaoNascimento-${index}`]?.value || '') : '',
       idade: tipo === 'FILHO(A)'
-        ? ((form.elements[`idade-${index}`]?.value ?? '') === '' ? Number.NaN : Number(form.elements[`idade-${index}`]?.value))
+        ? ((form.elements[`idade-${index}`]?.value ?? '') === '' ? null : Number(form.elements[`idade-${index}`]?.value))
         : null,
+      idadeConfirmada: tipo === 'FILHO(A)'
+        ? ((form.elements[`idade-${index}`]?.value ?? '') !== '')
+        : false,
     };
 
     if (!['ESPOSA/COMPANHEIRA', 'FILHO(A)', 'OUTRO MEMBRO'].includes(membro.tipo)) {
@@ -1652,12 +2051,27 @@ function lerFormularioEdicao() {
     if (!fullNameIsValid(membro.nome)) return { error: `Informe o nome completo do membro ${index + 1}.` };
 
     if (membro.tipo === 'FILHO(A)') {
-      if (!Number.isInteger(membro.idade) || membro.idade < 0 || membro.idade > 17) {
-        return { error: `Informe uma idade válida (0 a 17 anos) para ${membro.nome}.` };
+      const idadeInformada = membro.idade !== null;
+
+      if (idadeInformada && (!Number.isInteger(membro.idade) || membro.idade < 0)) {
+        return { error: `Informe uma idade válida para ${membro.nome}.` };
       }
       if (membro.cpf && !cpfIsValid(membro.cpf)) return { error: `O CPF informado para ${membro.nome} não é válido.` };
-    } else if (!cpfIsValid(membro.cpf)) {
-      return { error: `Informe um CPF válido para ${membro.nome}.` };
+      if (membro.identidade && !membro.orgaoEmissor) return { error: `Informe o órgão emissor da identidade de ${membro.nome}.` };
+
+      if (!idadeInformada) {
+        if (!cpfIsValid(membro.cpf)) return { error: `Sem informar a idade de ${membro.nome}, o CPF é obrigatório.` };
+        if (!membro.identidade) return { error: `Sem informar a idade de ${membro.nome}, a identidade é obrigatória.` };
+        if (!membro.orgaoEmissor) return { error: `Sem informar a idade de ${membro.nome}, o órgão emissor é obrigatório.` };
+      } else if (membro.idade <= 11 && !membro.certidaoNascimento) {
+        return { error: `Informe o número da Certidão de Nascimento de ${membro.nome}.` };
+      } else if (membro.idade >= 12 && membro.idade <= 17 && !membro.cpf && !membro.identidade) {
+        return { error: `Para ${membro.nome}, de 12 a 17 anos, informe CPF ou identidade.` };
+      }
+    } else {
+      if (!cpfIsValid(membro.cpf)) return { error: `Informe um CPF válido para ${membro.nome}.` };
+      if (!membro.identidade) return { error: `Informe o número da identidade de ${membro.nome}.` };
+      if (!membro.orgaoEmissor) return { error: `Informe o órgão emissor da identidade de ${membro.nome}.` };
     }
     membros.push(membro);
   }
@@ -1700,7 +2114,11 @@ el.conteudoEdicaoFamilia.addEventListener('click', (event) => {
       nome: '',
       apelido: '',
       cpf: '',
+      identidade: '',
+      orgaoEmissor: '',
+      certidaoNascimento: '',
       idade: null,
+      idadeConfirmada: false,
     });
     renderEditFamilyDialog();
   }
@@ -1718,7 +2136,7 @@ el.formEditarFamilia.addEventListener('input', (event) => {
         idadeInput.disabled = event.target.value !== 'FILHO(A)';
         if (event.target.value !== 'FILHO(A)') idadeInput.value = '';
       }
-      if (cpfInput) cpfInput.placeholder = event.target.value === 'FILHO(A)' ? 'Opcional para filho(a)' : '000.000.000-00';
+      if (cpfInput) cpfInput.placeholder = event.target.value === 'FILHO(A)' ? 'Conforme idade' : '000.000.000-00';
     }
   }
 });
@@ -1749,6 +2167,8 @@ el.formEditarFamilia.addEventListener('submit', async (event) => {
         nome: result.responsavel.nome,
         apelido: result.responsavel.apelido,
         cpf: result.responsavel.cpf,
+        identidade: result.responsavel.identidade,
+        orgaoEmissor: result.responsavel.orgaoEmissor,
         quantidade,
         valorUnitario: VALOR_PASSAGEM,
         valorTotal,
@@ -2071,14 +2491,26 @@ el.btnPdfOnibus.addEventListener('click', () => {
 
   autoTable(pdf, {
     startY: 41,
-    head: [['Nome completo', 'Vínculo', 'CPF', 'Idade']],
+    head: [['Nome completo', 'Vínculo', 'CPF', 'Identidade', 'Órgão emissor', 'Certidão de Nascimento', 'Idade']],
     body: passageiros.map((item) => [
       upperText(item.nome || ''),
       item.tipo || '—',
       item.cpf ? formatCpf(item.cpf) : '—',
+      item.identidade || '—',
+      item.orgaoEmissor || '—',
+      item.certidaoNascimento || '—',
       item.idade ?? '—',
     ]),
-    styles: { fontSize: 9 },
+    styles: { fontSize: 7.5 },
+    columnStyles: {
+      0: { cellWidth: 47 },
+      1: { cellWidth: 31 },
+      2: { cellWidth: 27 },
+      3: { cellWidth: 31 },
+      4: { cellWidth: 27 },
+      5: { cellWidth: 55 },
+      6: { cellWidth: 14 },
+    },
     didParseCell: (data) => {
       if (data.section !== 'body') return;
       const familyIndex = stripes[data.row.index];

@@ -8,54 +8,206 @@ service cloud.firestore {
         && request.auth.token.email == 'eddesprj@gmail.com';
     }
 
-    match /inscricoes/{cpf} {
+    function canSubmitFamily() {
+      return request.auth == null || isAdmin();
+    }
+
+    function validResponsavel(familyId) {
+      return request.resource.data.responsavel is map
+        && request.resource.data.responsavel.keys().hasOnly([
+          'tipo',
+          'nome',
+          'apelido',
+          'cpf',
+          'identidade',
+          'orgaoEmissor',
+          'certidaoNascimento',
+          'idade'
+        ])
+        && request.resource.data.responsavel.tipo == 'RESPONSÁVEL'
+        && request.resource.data.responsavel.nome is string
+        && request.resource.data.responsavel.nome.size() >= 3
+        && request.resource.data.responsavel.nome.size() <= 120
+        && request.resource.data.responsavel.apelido is string
+        && request.resource.data.responsavel.apelido.size() <= 40
+        && request.resource.data.responsavel.cpf is string
+        && request.resource.data.responsavel.cpf.matches('^[0-9]{11}$')
+        && request.resource.data.responsavel.cpf == familyId
+        && request.resource.data.responsavel.identidade is string
+        && request.resource.data.responsavel.identidade.size() >= 1
+        && request.resource.data.responsavel.identidade.size() <= 30
+        && request.resource.data.responsavel.orgaoEmissor is string
+        && request.resource.data.responsavel.orgaoEmissor.size() >= 1
+        && request.resource.data.responsavel.orgaoEmissor.size() <= 40
+        && request.resource.data.responsavel.certidaoNascimento == ''
+        && request.resource.data.responsavel.idade == null;
+    }
+
+    function validFamilyPayload(familyId) {
+      return request.resource.data.keys().hasOnly([
+          'responsavel',
+          'membros',
+          'totalPessoas',
+          'totalPassagens',
+          'valorUnitario',
+          'valorTotal',
+          'criadoEm'
+        ])
+        && validResponsavel(familyId)
+        && request.resource.data.membros is list
+        && request.resource.data.membros.size() <= 19
+        && request.resource.data.totalPessoas is int
+        && request.resource.data.totalPessoas >= 1
+        && request.resource.data.totalPessoas <= 20
+        && request.resource.data.totalPessoas == request.resource.data.membros.size() + 1
+        && request.resource.data.totalPassagens is int
+        && request.resource.data.totalPassagens >= 1
+        && request.resource.data.totalPassagens <= request.resource.data.totalPessoas
+        && request.resource.data.valorUnitario == 90
+        && request.resource.data.valorTotal == request.resource.data.totalPassagens * 90;
+    }
+
+    function validDirectFamilyUpdate(familyId) {
+      return familyId.matches('^[0-9]{11}$')
+        && validFamilyPayload(familyId)
+        && request.resource.data.criadoEm == resource.data.criadoEm;
+    }
+
+    function validPublicCreate() {
+      return request.resource.data.keys().hasOnly([
+          'nomePublico',
+          'totalPessoas',
+          'totalPassagens',
+          'valorPago',
+          'criadoEm'
+        ])
+        && request.resource.data.nomePublico is string
+        && request.resource.data.nomePublico.size() >= 3
+        && request.resource.data.nomePublico.size() <= 100
+        && request.resource.data.totalPessoas is int
+        && request.resource.data.totalPessoas >= 1
+        && request.resource.data.totalPessoas <= 20
+        && request.resource.data.totalPassagens is int
+        && request.resource.data.totalPassagens >= 1
+        && request.resource.data.totalPassagens <= request.resource.data.totalPessoas
+        && request.resource.data.valorPago is number
+        && request.resource.data.valorPago == 0
+        && request.resource.data.criadoEm == request.time;
+    }
+
+    function validDirectPublicUpdate(familyId) {
+      let privateAfter = getAfter(/databases/$(database)/documents/familias/$(familyId));
+      return familyId.matches('^[0-9]{11}$')
+        && request.resource.data.keys().hasOnly([
+          'nomePublico',
+          'totalPessoas',
+          'totalPassagens',
+          'valorPago',
+          'criadoEm'
+        ])
+        && request.resource.data.nomePublico is string
+        && request.resource.data.nomePublico.size() >= 3
+        && request.resource.data.nomePublico.size() <= 100
+        && request.resource.data.totalPessoas is int
+        && request.resource.data.totalPessoas >= 1
+        && request.resource.data.totalPessoas <= 20
+        && request.resource.data.totalPassagens is int
+        && request.resource.data.totalPassagens >= 1
+        && request.resource.data.totalPassagens <= request.resource.data.totalPessoas
+        && request.resource.data.valorPago == resource.data.valorPago
+        && request.resource.data.criadoEm == resource.data.criadoEm
+        && privateAfter.data.totalPessoas == request.resource.data.totalPessoas
+        && privateAfter.data.totalPassagens == request.resource.data.totalPassagens
+        && privateAfter.data.criadoEm == request.resource.data.criadoEm;
+    }
+
+    match /familias/{familyId} {
+      allow create: if
+        isAdmin()
+        || (
+          canSubmitFamily()
+          && validFamilyPayload(familyId)
+          && request.resource.data.criadoEm == request.time
+        );
+
+      // Atualização pública direta: somente GET do documento cujo ID é o CPF informado.
+      // LIST/consulta da coleção completa continua restrita ao organizador.
+      allow get: if isAdmin() || familyId.matches('^[0-9]{11}$');
+      allow list: if isAdmin();
+
+      // O responsável pode salvar diretamente usando o CPF do cadastro.
+      // O CPF do responsável e a data original da inscrição não podem ser trocados.
+      allow update: if isAdmin() || validDirectFamilyUpdate(familyId);
+      allow delete: if isAdmin();
+    }
+
+    match /familiasPublicas/{familyId} {
+      allow read: if true;
 
       allow create: if
-        request.auth == null
-        && cpf == request.resource.data.cpf
+        isAdmin()
+        || (
+          canSubmitFamily()
+          && validPublicCreate()
+        );
+
+      // Na atualização pública, valor pago e data original são preservados.
+      allow update: if isAdmin() || validDirectPublicUpdate(familyId);
+      allow delete: if isAdmin();
+    }
+
+    // Coleções do fluxo anterior de autorização são mantidas apenas para o organizador,
+    // para não quebrar nem expor eventuais registros de teste já existentes.
+    match /pedidosAcessoAtualizacao/{docId} {
+      allow read, write: if isAdmin();
+    }
+
+    match /acessosAtualizacao/{docId} {
+      allow read, write: if isAdmin();
+    }
+
+    match /solicitacoesAtualizacao/{docId} {
+      allow read, write: if isAdmin();
+    }
+
+    // Controle financeiro privado.
+    match /pagamentos/{pagamentoId} {
+      allow read, delete: if isAdmin();
+
+      allow create: if isAdmin()
         && request.resource.data.keys().hasOnly([
-          'nome',
-          'cpf',
-          'quantidade',
-          'valorUnitario',
-          'valorTotal',
+          'familiaId',
+          'responsavelNome',
+          'pagoPor',
+          'valor',
           'criadoEm'
         ])
-        && request.resource.data.nome is string
-        && request.resource.data.nome.size() >= 3
-        && request.resource.data.nome.size() <= 120
-        && request.resource.data.cpf is string
-        && request.resource.data.cpf.matches('^[0-9]{11}$')
-        && request.resource.data.quantidade is int
-        && request.resource.data.quantidade >= 1
-        && request.resource.data.quantidade <= 20
-        && request.resource.data.valorUnitario == 90
-        && request.resource.data.valorTotal == request.resource.data.quantidade * 90
+        && request.resource.data.familiaId is string
+        && request.resource.data.familiaId.size() >= 1
+        && request.resource.data.familiaId.size() <= 120
+        && request.resource.data.responsavelNome is string
+        && request.resource.data.responsavelNome.size() >= 2
+        && request.resource.data.responsavelNome.size() <= 120
+        && request.resource.data.pagoPor is string
+        && request.resource.data.pagoPor.size() >= 2
+        && request.resource.data.pagoPor.size() <= 120
+        && request.resource.data.valor is number
+        && request.resource.data.valor > 0
+        && request.resource.data.valor <= 100000
         && request.resource.data.criadoEm == request.time;
 
-      allow read: if isAdmin();
+      allow update: if false;
+    }
 
-      allow update: if
-        isAdmin()
-        && request.resource.data.cpf == resource.data.cpf
-        && request.resource.data.valorUnitario == 90
-        && request.resource.data.keys().hasOnly([
-          'nome',
-          'cpf',
-          'quantidade',
-          'valorUnitario',
-          'valorTotal',
-          'criadoEm'
-        ])
-        && request.resource.data.nome is string
-        && request.resource.data.nome.size() >= 3
-        && request.resource.data.nome.size() <= 120
-        && request.resource.data.quantidade is int
-        && request.resource.data.quantidade >= 1
-        && request.resource.data.quantidade <= 20
-        && request.resource.data.valorTotal == request.resource.data.quantidade * 90;
+    // Modelo anterior mantido para consulta/migração controlada pelo organizador.
+    match /inscricoes/{docId} {
+      allow read, update, delete: if isAdmin();
+      allow create: if false;
+    }
 
-      allow delete: if isAdmin();
+    match /participantesPublicos/{docId} {
+      allow read: if true;
+      allow write: if isAdmin();
     }
 
     match /{document=**} {
